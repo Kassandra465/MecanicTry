@@ -1,0 +1,372 @@
+import numpy as np
+from scipy import linalg
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
+class BeamElement3D:
+    def __init__(self, E, G, A, Iy, Iz, J, L, rho):
+
+        self.E = E
+        self.G = G
+        self.A = A
+        self.Iy = Iy
+        self.Iz = Iz
+        self.J = J
+        self.L = L
+        self.rho = rho
+
+    def get_stiffness_matrix(self):
+        """Calculate element stiffness matrix"""
+        E, G, A, Iy, Iz, J, L = self.E, self.G, self.A, self.Iy, self.Iz, self.J, self.L
+
+        # Initialize 12x12 matrix
+        K = np.zeros((12, 12))
+
+        # Axial terms
+        K[0, 0] = K[6, 6] = E * A / L
+        K[0, 6] = K[6, 0] = -E * A / L
+
+        # Bending terms (y-z plane)
+        EIz = E * Iz
+        K[1, 1] = K[7, 7] = 12 * EIz / (L ** 3)
+        K[1, 7] = K[7, 1] = -12 * EIz / (L ** 3)
+        K[1, 5] = K[5, 1] = K[1, 11] = K[11, 1] = 6 * EIz / (L ** 2)
+        K[5, 7] = K[7, 5] = -6 * EIz / (L ** 2)
+        K[5, 5] = K[11, 11] = 4 * EIz / L
+        K[5, 11] = K[11, 5] = 2 * EIz / L
+
+        # Bending terms (x-z plane)
+        EIy = E * Iy
+        K[2, 2] = K[8, 8] = 12 * EIy / (L ** 3)
+        K[2, 8] = K[8, 2] = -12 * EIy / (L ** 3)
+        K[2, 4] = K[4, 2] = K[2, 10] = K[10, 2] = -6 * EIy / (L ** 2)
+        K[4, 8] = K[8, 4] = 6 * EIy / (L ** 2)
+        K[4, 4] = K[10, 10] = 4 * EIy / L
+        K[4, 10] = K[10, 4] = 2 * EIy / L
+
+        # Torsional terms
+        GJ = G * J
+        K[3, 3] = K[9, 9] = GJ / L
+        K[3, 9] = K[9, 3] = -GJ / L
+
+        return K
+
+    def get_mass_matrix(self):
+        """Calculate element consistent mass matrix"""
+        rho, A, L = self.rho, self.A, self.L
+
+        # Initialize 12x12 matrix
+        M = np.zeros((12, 12))
+
+        # Lumped mass approach for simplicity
+        m = rho * A * L
+
+        # Translational mass terms
+        for i in [0, 1, 2, 6, 7, 8]:
+            M[i, i] = m / 2
+
+        # Rotational mass terms (simplified)
+        for i in [3, 4, 5, 9, 10, 11]:
+            M[i, i] = m * L ** 2 / 24
+
+        return M
+
+
+class StadiumTruss:
+    def __init__(self):
+        # Material properties
+        self.E = 210e9  # Young's modulus [Pa]
+        self.rho = 7800  # Density [kg/m³]
+        self.nu = 0.3  # Poisson's ratio
+        self.G = self.E / (2 * (1 + self.nu))  # Shear modulus
+
+        # Cross-section properties (circular hollow section)
+        self.D_outer = 0.150  # Outer diameter [m]
+        self.t = 0.005  # Wall thickness [m]
+        self.D_inner = self.D_outer - 2 * self.t
+        self.A = np.pi / 4 * (self.D_outer ** 2 - self.D_inner ** 2)
+        self.I = np.pi / 64 * (self.D_outer ** 4 - self.D_inner ** 4)
+        self.J = 2 * self.I
+
+        # Structure dimensions
+        self.width = 2  # Width [m]
+        self.heights = [5, 3, 1]  # Support heights [m]
+        self.spacing = 4  # Support spacing [m]
+        self.transverse_spacing = 1  # Transverse bar spacing [m]
+
+        # Supporter mass properties
+        self.supporter_mass = 80  # Mass per supporter [kg]
+        self.num_supporters = 51
+        self.num_mass_nodes = 18
+
+    def generate_mesh(self, elements_per_beam):
+        """Generate mesh with specified number of elements per beam"""
+        # Calculate number of sections in x direction
+        num_x_sections = int(self.spacing * 2 / self.transverse_spacing)
+
+        # Generate nodes
+        nodes = []
+        node_id = 0
+
+        # Create vertical support nodes
+        for x in [0, self.spacing, 2*self.spacing]:
+            for y in [0, self.width]:
+                for z in np.linspace(0, self.heights[int(x/self.spacing)], elements_per_beam + 1):
+                    nodes.append([node_id, x, y, z])
+                    node_id += 1
+
+        # Create nodes for transverse bars
+        for x in np.linspace(0, 2*self.spacing, num_x_sections + 1):
+            z_height = np.interp(x, [0, self.spacing, 2*self.spacing], self.heights)
+            nodes.append([node_id, x, 0, z_height])
+            nodes.append([node_id + 1, x, self.width, z_height])
+            node_id += 2
+
+        nodes = np.array(nodes)
+
+        # Generate elements
+        elements = []
+        elem_id = 0
+
+        # Create vertical support elements
+        supports_per_side = len(self.heights)
+        nodes_per_support = elements_per_beam + 1
+
+        for i in range(supports_per_side * 2):  # 2 sides (front and back)
+            start_node = i * nodes_per_support
+            for j in range(elements_per_beam):
+                elements.append([elem_id, start_node + j, start_node + j + 1])
+                elem_id += 1
+
+        # Create transverse elements
+        for i in range(num_x_sections + 1):
+            node1 = supports_per_side * 2 * nodes_per_support + 2*i
+            node2 = node1 + 1
+            elements.append([elem_id, node1, node2])
+            elem_id += 1
+
+        elements = np.array(elements)
+
+        return nodes, elements
+
+    def assemble_global_matrices(self, elements_per_beam):
+        """Assemble global stiffness and mass matrices"""
+        # Generate mesh
+        nodes, elements = self.generate_mesh(elements_per_beam)
+        num_nodes = len(nodes)
+        num_dof = 6 * num_nodes
+
+        # Initialize global matrices
+        K_global = np.zeros((num_dof, num_dof))
+        M_global = np.zeros((num_dof, num_dof))
+
+        # Assemble matrices for each element
+        for elem in elements:
+            # Get element nodes
+            node1, node2 = nodes[elem[1]], nodes[elem[2]]
+
+            # Calculate element length and orientation
+            dx = node2[1] - node1[1]
+            dy = node2[2] - node1[2]
+            dz = node2[3] - node1[3]
+            L = np.sqrt(dx ** 2 + dy ** 2 + dz ** 2)
+
+            # Create element
+            beam = BeamElement3D(
+                self.E, self.G, self.A, self.I, self.I, self.J, L, self.rho
+            )
+
+            # Get element matrices
+            K_elem = beam.get_stiffness_matrix()
+            M_elem = beam.get_mass_matrix()
+
+            # Calculate transformation matrix (simplified - assumes small rotations)
+            T = np.eye(12)  # For now, using identity transformation
+
+            # Transform element matrices
+            K_elem = T.T @ K_elem @ T
+            M_elem = T.T @ M_elem @ T
+
+            # Get global DOF indices
+            dof1 = 6 * elem[1]
+            dof2 = 6 * elem[2]
+            dofs = np.concatenate([np.arange(dof1, dof1 + 6), np.arange(dof2, dof2 + 6)])
+
+            # Assemble into global matrices
+            for i in range(12):
+                for j in range(12):
+                    K_global[dofs[i], dofs[j]] += K_elem[i, j]
+                    M_global[dofs[i], dofs[j]] += M_elem[i, j]
+
+        # Add lumped masses for supporters
+        mass_per_node = self.mass_per_node
+        for node in range(num_nodes):
+            # Add mass to translational DOFs only
+            for dof in range(3):
+                M_global[6 * node + dof, 6 * node + dof] += mass_per_node
+
+        # Apply boundary conditions (fixed supports)
+        # Identify fixed nodes (at z=0)
+        fixed_nodes = nodes[nodes[:, 3] == 0]
+        fixed_dofs = []
+        for node in fixed_nodes[:, 0]:
+            fixed_dofs.extend([6 * int(node) + i for i in range(6)])
+
+        # Remove fixed DOFs
+        free_dofs = np.setdiff1d(np.arange(num_dof), fixed_dofs)
+        K_global = K_global[np.ix_(free_dofs, free_dofs)]
+        M_global = M_global[np.ix_(free_dofs, free_dofs)]
+
+        return K_global, M_global, nodes, elements
+
+    def plot_mode_shape(self, nodes, elements, mode_vector, mode_number, frequency, scale_factor=1.0):
+        """Plot the mode shape for a given mode number"""
+        fig = plt.figure(figsize=(12, 8))
+        ax = fig.add_subplot(111, projection='3d')
+
+        # Get original and deformed node coordinates
+        original_coords = nodes[:, 1:]  # Skip node ID
+
+        # Reconstruct full mode shape vector (including fixed DOFs)
+        full_mode_vector = np.zeros(len(nodes) * 6)
+        free_dof_idx = 0
+        fixed_nodes = nodes[nodes[:, 3] == 0]
+        fixed_dofs = []
+        for node in fixed_nodes[:, 0]:
+            fixed_dofs.extend([6 * int(node) + i for i in range(6)])
+
+        for i in range(len(full_mode_vector)):
+            if i not in fixed_dofs:
+                full_mode_vector[i] = mode_vector[free_dof_idx]
+                free_dof_idx += 1
+
+        # Extract translational components
+        deformed_coords = np.zeros_like(original_coords)
+        for i in range(len(nodes)):
+            for j in range(3):  # x, y, z coordinates
+                deformed_coords[i, j] = original_coords[i, j] + scale_factor * full_mode_vector[6 * i + j]
+
+        # Plot original structure (gray)
+        for elem in elements:
+            node1, node2 = int(elem[1]), int(elem[2])
+            x = [original_coords[node1, 0], original_coords[node2, 0]]
+            y = [original_coords[node1, 1], original_coords[node2, 1]]
+            z = [original_coords[node1, 2], original_coords[node2, 2]]
+            ax.plot(x, y, z, 'gray', alpha=0.3, linewidth=1)
+
+        # Plot deformed structure (blue)
+        for elem in elements:
+            node1, node2 = int(elem[1]), int(elem[2])
+            x = [deformed_coords[node1, 0], deformed_coords[node2, 0]]
+            y = [deformed_coords[node1, 1], deformed_coords[node2, 1]]
+            z = [deformed_coords[node1, 2], deformed_coords[node2, 2]]
+            ax.plot(x, y, z, 'b', linewidth=2)
+
+        # Plot nodes
+        ax.scatter(original_coords[:, 0], original_coords[:, 1], original_coords[:, 2],
+                   c='gray', alpha=0.3, s=30)
+        ax.scatter(deformed_coords[:, 0], deformed_coords[:, 1], deformed_coords[:, 2],
+                   c='blue', s=30)
+
+        # Highlight fixed nodes
+        fixed_nodes_coords = original_coords[nodes[:, 3] == 0]
+        ax.scatter(fixed_nodes_coords[:, 0], fixed_nodes_coords[:, 1], fixed_nodes_coords[:, 2],
+                   c='red', s=100, marker='s', label='Fixed supports')
+
+        # Set labels and title
+        ax.set_xlabel('X [m]')
+        ax.set_ylabel('Y [m]')
+        ax.set_zlabel('Z [m]')
+        ax.set_title(f'Mode {mode_number + 1}: {frequency:.2f} Hz')
+
+        # Add legend
+        ax.legend(['Original structure', 'Deformed shape', 'Nodes', 'Fixed supports'])
+
+        # Set equal aspect ratio
+        ax.set_box_aspect([np.ptp(original_coords[:, 0]),
+                           np.ptp(original_coords[:, 1]),
+                           np.ptp(original_coords[:, 2])])
+
+        plt.tight_layout()
+        return fig
+
+    def solve_eigenvalue_problem(self, K, M):
+        # Solve eigenvalue problem
+        eigenvalues, eigenvectors = linalg.eigh(K, M)
+
+        # Ensure positive frequencies by using the absolute value of eigenvalues
+        natural_frequencies = np.sqrt(np.abs(eigenvalues)) / (2 * np.pi)
+
+        # Sort frequencies and corresponding eigenvectors
+        sorted_indices = np.argsort(natural_frequencies)
+        natural_frequencies = natural_frequencies[sorted_indices]
+        mode_shapes = eigenvectors[:, sorted_indices]
+
+        return natural_frequencies, mode_shapes
+
+    def convergence_study(self, max_elements=10):
+        frequencies = []
+        element_counts = list(range(2, max_elements + 1))
+
+        for n_elements in element_counts:
+            # Assemble global matrices for current refinement
+            K, M, nodes, elements = self.assemble_global_matrices(n_elements)
+            natural_frequencies, _ = self.solve_eigenvalue_problem(K, M)
+
+            # Store the first few frequencies
+            frequencies.append(natural_frequencies[:6])  # Adjust number as needed
+
+        return element_counts, np.array(frequencies)
+
+    def plot_convergence_study(self, element_counts, frequencies):
+        """
+        Plot convergence study results.
+
+        Parameters:
+            element_counts: List of element counts.
+            frequencies: Frequencies computed for each refinement level.
+        """
+        plt.figure(figsize=(10, 6))
+        for i in range(frequencies.shape[1]):
+            plt.plot(element_counts, frequencies[:, i], marker='o', label=f'Mode {i + 1}')
+        plt.xlabel('Number of Elements per Beam')
+        plt.ylabel('Natural Frequency (Hz)')
+        plt.title('Convergence Study')
+        plt.legend()
+        plt.grid()
+        plt.show()
+
+    def calculate_total_mass(self):
+        """Calculate total mass using rigid body mode"""
+        # The total mass is the sum of translational DOFs along the diagonal
+        translational_dofs = np.arange(0, M.shape[0], 6)
+        total_mass = np.sum(np.diag(M)[translational_dofs])
+
+    def main():
+        # Create stadium model
+        stadium = StadiumTruss()
+
+        # Number of elements per beam
+        elements_per_beam = 5
+
+        # Generate mesh and get nodes and elements
+        nodes, elements = stadium.generate_mesh(elements_per_beam)
+
+        # Perform analysis
+        K, M = stadium.assemble_global_matrices(elements_per_beam)
+        # Get natural frequencies and mode shapes
+        frequencies, mode_shapes = stadium.solve_eigenvalue_problem(K, M)
+
+        # Print first 6 natural frequencies
+        print("\nFirst 6 natural frequencies (Hz):")
+        for i, freq in enumerate(frequencies[:6]):
+            print(f"Mode {i + 1}: {freq:.2f} Hz")
+
+        # Plot first 6 mode shapes
+        scale_factor = 0.5  # Adjust this to make deformations more visible
+        for i in range(6):
+            fig = stadium.plot_mode_shape(nodes, elements, mode_shapes[:, i], i, frequencies[i], scale_factor)
+            plt.show()
+
+        return frequencies, K, M, nodes, elements
+
