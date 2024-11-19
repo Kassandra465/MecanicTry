@@ -11,6 +11,7 @@ G = E / (2 * (1 + nu))  # Module de cisaillement
 diametre_exterieur = 0.15  # m
 epaisseur_paroi = 0.005  # m
 
+
 # Calcul des propriétés de la section
 A = np.pi * (diametre_exterieur**2 - (diametre_exterieur - 2 * epaisseur_paroi)**2) / 4
 I = np.pi * (diametre_exterieur**4 - (diametre_exterieur - 2 * epaisseur_paroi)**4) / 64
@@ -43,19 +44,19 @@ main_nodes = np.array([
     [8, 2, 1],      # Nœud 18
     [0, 0, 0],      # Nœud 19
     [0, 2, 0],      # Nœud 20
-    [0, 0, 2.5],     # Nœud 21
-    [0, 2, 2.5],     # Nœud 22
+    [0, 0, 2.5],    # Nœud 21
+    [0, 2, 2.5],    # Nœud 22
     [4, 0, 0],      # Nœud 23
     [4, 2, 0],      # Nœud 24
-    [4, 0, 1.5],     # Nœud 25
-    [4, 2, 1.5],     # Nœud 26
-    [8, 0, 0],       # Nœud 27
-    [8, 2, 0],       # Nœud 28
-    [0, 1, 1.25],    # Nœud 29
-    [0, 1, 3.75],    # Nœud 30
-    [4, 1, 0.75],    # Nœud 31
-    [4, 1, 2.25],    # Nœud 32
-    [8, 1, 0.5],     # Nœud 33
+    [4, 0, 1.5],    # Nœud 25
+    [4, 2, 1.5],    # Nœud 26
+    [8, 0, 0],      # Nœud 27
+    [8, 2, 0],      # Nœud 28
+    [0, 1, 1.25],   # Nœud 29
+    [0, 1, 3.75],   # Nœud 30
+    [4, 1, 0.75],   # Nœud 31
+    [4, 1, 2.25],   # Nœud 32
+    [8, 1, 0.5]     # Nœud 33
 ])
 
 # Ajouter les nœuds principaux à la liste des nœuds
@@ -76,51 +77,51 @@ main_beams = np.array([
     [7, 8],  # Poutre 11
     [7, 9],  # Poutre 12
     [8, 10], # Poutre 13
-    [9, 10],  # Poutre 14
-    [9, 11],  # Poutre 15
-    [10, 12],  # Poutre 16
-    [11, 12],  # Poutre 17
-    [11, 13],  # Poutre 18
-    [12, 14],  # Poutre 19
-    [13, 14],  # Poutre 20
-    [13, 15],  # Poutre 21
-    [14, 16],  # Poutre 22
-    [15, 16],  # Poutre 23
-    [15, 17],  # Poutre 24
-    [16, 18],  # Poutre 25
-    [17, 18],  # Poutre 26
+    [9, 10], # Poutre 14
+    [9, 11], # Poutre 15
+    [10, 12], # Poutre 16
+    [11, 12], # Poutre 17
+    [11, 13], # Poutre 18
+    [12, 14], # Poutre 19
+    [13, 14], # Poutre 20
+    [13, 15], # Poutre 21
+    [14, 16], # Poutre 22
+    [15, 16], # Poutre 23
+    [15, 17], # Poutre 24
+    [16, 18], # Poutre 25
+    [17, 18], # Poutre 26
     [1, 21],  # Poutre 27
     [1, 30],  # Poutre 28
     [2, 22],  # Poutre 29
     [2, 30],  # Poutre 30
-    [21, 30],   # Poutre 31
-    [22, 30],   # Poutre 32
-    [21, 22],   # Poutre 33
-    [20, 22],   # Poutre 34
-    [21, 29],   # Poutre 35
-    [22, 29],   # Poutre 36
-    [19, 29],   # Poutre 37
-    [20, 29],   # Poutre 38
-    [21, 19],   # Poutre 39
-    [9, 32],   # Poutre 40
-    [9, 25],   # Poutre 41
-    [32, 26],   # Poutre 42
-    [32, 25],   # Poutre 43
-    [10, 26],   # Poutre 44
-    [10, 32],   # Poutre 45
-    [25, 26],   # Poutre 46
-    [25, 31],   # Poutre 47
-    [26, 31],   # Poutre 48
-    [23, 31],   # Poutre 49
-    [24, 31],   # Poutre 50
-    [23, 25],   # Poutre 51
-    [24, 26],   # Poutre 52
-    [17, 27],   # Poutre 53
-    [18, 28],   # Poutre 54
-    [17, 33],   # Poutre 55
-    [18, 33],   # Poutre 56
-    [27, 33],   # Poutre 57
-    [28, 33]   # Poutre 58
+    [21, 30], # Poutre 31
+    [22, 30], # Poutre 32
+    [21, 22], # Poutre 33
+    [20, 22], # Poutre 34
+    [21, 29], # Poutre 35
+    [22, 29], # Poutre 36
+    [19, 29], # Poutre 37
+    [20, 29], # Poutre 38
+    [21, 19], # Poutre 39
+    [9, 32],  # Poutre 40
+    [9, 25],  # Poutre 41
+    [32, 26], # Poutre 42
+    [32, 25], # Poutre 43
+    [10, 26], # Poutre 44
+    [10, 32], # Poutre 45
+    [25, 26], # Poutre 46
+    [25, 31], # Poutre 47
+    [26, 31], # Poutre 48
+    [23, 31], # Poutre 49
+    [24, 31], # Poutre 50
+    [23, 25], # Poutre 51
+    [24, 26], # Poutre 52
+    [17, 27], # Poutre 53
+    [18, 28], # Poutre 54
+    [17, 33], # Poutre 55
+    [18, 33], # Poutre 56
+    [27, 33], # Poutre 57
+    [28, 33]  # Poutre 58
 ])
 
 # Ajouter les poutres principales à la liste des éléments
@@ -166,9 +167,6 @@ main_dofs = np.array([
 # Ajouter les degrés de liberté pour les nœuds principaux à la liste des degrés de liberté
 dofList.extend(main_dofs.flatten())
 
-# Ajouter les degrés de liberté pour les nœuds principaux à la liste des degrés de liberté
-dofList.extend(main_dofs.flatten())
-
 # Fonction pour ajouter les nœuds intermédiaires et les degrés de liberté correspondants
 def add_intermediate_nodes(num_elements_per_beam):
     for i in range(len(main_beams)):
@@ -191,30 +189,37 @@ def add_intermediate_nodes(num_elements_per_beam):
 
 # Fonction pour calculer la matrice de masse élémentaire
 def M_el(rho, A, l):
+    r = np.sqrt(I / A)  # Rayon de giration approximatif
     return rho * A * l * np.array([
-        [13/35, 0, 0, 0, 11*l/210, 0],
-        [0, 13/35, 0, -11*l/210, 0, l**2/105],
-        [0, 0, l**2/105, 0, -13*l/420, 0],
-        [0, -11*l/210, 0, l**2/105, 0, 13*l/420],
-        [11*l/210, 0, -13*l/420, 0, l**2/105, 0],
-        [0, l**2/105, 0, 13*l/420, 0, l**2/105]
+        [1/3, 0, 0, 0, 0, 0, 1/6, 0, 0, 0, 0, 0],
+        [0, 13/35, 0, 0, 0, 11*l/210, 0, 9/70, 0, 0, 0, -13*l/420],
+        [0, 0, 13/35, 0, -11*l/210, 0, 0, 0, 9/70, 0, 13*l/420, 0],
+        [0, 0, 0, r**2/3, 0, 0, 0, 0, 0, r**2/6, 0, 0],
+        [0, 0, -11*l/210, 0, l**2/105, 0, 0, 0, -13*l/420, 0, -l**2/140, 0],
+        [0, 11*l/210, 0, 0, 0, l**2/105, 0, 13*l/420, 0, 0, 0, -l**2/140],
+        [1/6, 0, 0, 0, 0, 0, 1/3, 0, 0, 0, 0, 0],
+        [0, 9/70, 0, 0, 0, 13*l/420, 0, 13/35, 0, 0, 0, -11*l/210],
+        [0, 0, 9/70, 0, -13*l/420, 0, 0, 0, 13/35, 0, 11*l/210, 0],
+        [0, 0, 0, r**2/6, 0, 0, 0, 0, 0, r**2/3, 0, 0],
+        [0, 0, 13*l/420, 0, -l**2/140, 0, 0, 0, 11*l/210, 0, l**2/105, 0],
+        [0, -13*l/420, 0, 0, 0, -l**2/140, 0, -11*l/210, 0, 0, 0, l**2/105]
     ])
 
 # Fonction pour calculer la matrice de rigidité élémentaire
 def K_el(E, G, Jx, A, l):
     return E * A / l * np.array([
-        [1, 0, 0, 0, 0, 0],
-        [0, 12/l**2, 0, 0, 0, 6/l],
-        [0, 0, 12/l**2, 0, -6/l, 0],
-        [0, 0, 0, G*Jx/l, 0, 0],
-        [0, 0, -6/l, 0, 4/l, 0],
-        [0, 6/l, 0, 0, 0, 2/l],
-        [-1, 0, 0, 0, 0, 0],
-        [0, -12/l**2, 0, 0, 0, 6/l],
-        [0, 0, -12/l**2, 0, 6/l, 0],
-        [0, 0, 0, -G*Jx/l, 0, 0],
-        [0, 0, -6/l, 0, 2/l, 0],
-        [0, 6/l, 0, 0, 0, 4/l]
+        [1, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 0],
+        [0, 12/l**2, 0, 0, 0, 6/l, 0, -12/l**2, 0, 0, 0, 6/l],
+        [0, 0, 12/l**2, 0, -6/l, 0, 0, 0, -12/l**2, 0, -6/l, 0],
+        [0, 0, 0, G*Jx/l, 0, 0, 0, 0, 0, -G*Jx/l, 0, 0],
+        [0, 0, -6/l, 0, 4/l, 0, 0, 0, 6/l, 0, 2/l, 0],
+        [0, 6/l, 0, 0, 0, 2/l, 0, -6/l, 0, 0, 0, 4/l],
+        [-1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+        [0, -12/l**2, 0, 0, 0, -6/l, 0, 12/l**2, 0, 0, 0, -6/l],
+        [0, 0, -12/l**2, 0, 6/l, 0, 0, 0, 12/l**2, 0, 6/l, 0],
+        [0, 0, 0, -G*Jx/l, 0, 0, 0, 0, 0, G*Jx/l, 0, 0],
+        [0, 0, -6/l, 0, 2/l, 0, 0, 0, 6/l, 0, 4/l, 0],
+        [0, 6/l, 0, 0, 0, 4/l, 0, -6/l, 0, 0, 0, 2/l]
     ])
 
 # Fonction pour obtenir le vecteur de localisation pour un élément
