@@ -23,25 +23,39 @@ nodeList = []
 
 # Définir les nœuds principaux et leurs coordonnées
 main_nodes = np.array([
-    [0, 0, 0],    # Nœud 1
-    [2, 0, 5],    # Nœud 2
-    [6, 0, 3],    # Nœud 3
-    [8, 0, 1],    # Nœud 4
-    [0, 2, 5],    # Nœud 5
-    [2, 2, 5],    # Nœud 6
-    [4, 2, 3],    # Nœud 7
-    [6, 2, 3],    # Nœud 8
-    [8, 2, 1],    # Nœud 9
-    [0, 4, 3],    # Nœud 10
-    [2, 4, 3],    # Nœud 11
-    [4, 4, 1],    # Nœud 12
-    [6, 4, 1],    # Nœud 13
-    [8, 4, 0],    # Nœud 14
-    [0, 6, 1],    # Nœud 15
-    [2, 6, 1],    # Nœud 16
-    [4, 6, 0],    # Nœud 17
-    [6, 6, 0],    # Nœud 18
-    [8, 6, 0]     # Nœud 19
+    [0, 0, 5],      # Nœud 1
+    [0, 2, 5],      # Nœud 2
+    [1, 0, 4.5],    # Nœud 3
+    [1, 2, 4.5],    # Nœud 4
+    [2, 0, 4],      # Nœud 5
+    [2, 2, 4],      # Nœud 6
+    [3, 0, 3.5],    # Nœud 7
+    [3, 2, 3.5],    # Nœud 8
+    [4, 0, 3],      # Nœud 9
+    [4, 2, 3],      # Nœud 10
+    [5, 0, 2.5],    # Nœud 11
+    [5, 2, 2.5],    # Nœud 12
+    [6, 0, 2],      # Nœud 13
+    [6, 2, 2],      # Nœud 14
+    [7, 0, 1.5],    # Nœud 15
+    [7, 2, 1.5],    # Nœud 16
+    [8, 0, 1],      # Nœud 17
+    [8, 2, 1],      # Nœud 18
+    [0, 0, 0]       # Nœud 19
+    [0, 2, 0]       # Nœud 20
+    [0, 0, 2.5]     # Nœud 21
+    [0, 2, 2.5]     # Nœud 22
+    [4, 0, 0]       # Nœud 23
+    [4, 2, 0]       # Nœud 24
+    [4, 0, 1.5]     # Nœud 25
+    [4, 2, 1.5]     # Nœud 26
+    [8, 0, 0]       # Nœud 27
+    [8, 2, 0]       # Nœud 28
+    [0, 1, 1.25]    # Nœud 29
+    [0, 1, 3.75]    # Nœud 30
+    [4, 1, 0.75]    # Nœud 31
+    [4, 1, 2.25]    # Nœud 32
+    [8, 1, 0.5]     # Nœud 33
 ])
 
 # Ajouter les nœuds principaux à la liste des nœuds
@@ -49,26 +63,65 @@ nodeList.extend(main_nodes)
 
 # Définir les poutres principales
 main_beams = np.array([
-    [1, 2],  # Poutre entre nœuds 1 et 2
-    [2, 3],  # Poutre entre nœuds 2 et 3
-    [3, 4],  # Poutre entre nœuds 3 et 4
-    [1, 5],  # Poutre entre nœuds 1 et 5
-    [5, 6],  # Poutre entre nœuds 5 et 6
-    [6, 7],  # Poutre entre nœuds 6 et 7
-    [7, 8],  # Poutre entre nœuds 7 et 8
-    [8, 9],  # Poutre entre nœuds 8 et 9
-    [5, 10], # Poutre entre nœuds 5 et 10
-    [10, 11],# Poutre entre nœuds 10 et 11
-    [11, 12],# Poutre entre nœuds 11 et 12
-    [12, 13],# Poutre entre nœuds 12 et 13
-    [13, 14],# Poutre entre nœuds 13 et 14
-    [9, 14], # Poutre entre nœuds 9 et 14
-    [10, 15],# Poutre entre nœuds 10 et 15
-    [15, 16],# Poutre entre nœuds 15 et 16
-    [16, 17],# Poutre entre nœuds 16 et 17
-    [17, 18],# Poutre entre nœuds 17 et 18
-    [18, 19],# Poutre entre nœuds 18 et 19
-    [14, 19] # Poutre entre nœuds 14 et 19
+    [1, 2],  # Poutre 1
+    [1, 3],  # Poutre 2
+    [2, 4],  # Poutre 3
+    [3, 4],  # Poutre 4
+    [3, 5],  # Poutre 5
+    [4, 6],  # Poutre 6
+    [5, 6],  # Poutre 7
+    [5, 7],  # Poutre 8
+    [6, 8],  # Poutre 9
+    [6, 7],  # Poutre 10
+    [7, 8],  # Poutre 11
+    [7, 9],  # Poutre 12
+    [8, 10], # Poutre 13
+    [9, 10],  # Poutre 14
+    [9, 11],  # Poutre 15
+    [10, 12],  # Poutre 16
+    [11, 12],  # Poutre 17
+    [11, 13],  # Poutre 18
+    [12, 14],  # Poutre 19
+    [13, 14],  # Poutre 20
+    [13, 15],  # Poutre 21
+    [14, 16],  # Poutre 22
+    [15, 16],  # Poutre 23
+    [15, 17],  # Poutre 24
+    [16, 18],  # Poutre 25
+    [17, 18],  # Poutre 26
+    [1, 21],  # Poutre 27
+    [1, 30],  # Poutre 28
+    [2, 22],  # Poutre 29
+    [2, 30],  # Poutre 30
+    [21, 30],   # Poutre 31
+    [22, 30],   # Poutre 32
+    [21, 22],   # Poutre 33
+    [20, 22],   # Poutre 34
+    [21, 29],   # Poutre 35
+    [22, 29],   # Poutre 36
+    [19, 29],   # Poutre 37
+    [20, 29],   # Poutre 38
+    [21, 19],   # Poutre 39
+    [9, 32],   # Poutre 40
+    [9, 25],   # Poutre 41
+    [32, 26],   # Poutre 42
+    [32, 25],   # Poutre 43
+    [10, 26],   # Poutre 44
+    [10, 32],   # Poutre 45
+    [25, 26],   # Poutre 46
+    [25, 31],   # Poutre 47
+    [26, 31],   # Poutre 48
+    [23, 31],   # Poutre 49
+    [24, 31],   # Poutre 50
+    [23, 25],   # Poutre 51
+    [24, 26],   # Poutre 52
+    [17, 27],   # Poutre 53
+    [18, 28],   # Poutre 54
+    [17, 33],   # Poutre 55
+    [18, 33],   # Poutre 56
+    [27, 33],   # Poutre 57
+    [28, 33],   # Poutre 58
+
 ])
 
 # Ajouter les poutres principales à la liste des éléments
@@ -94,8 +147,25 @@ main_dofs = np.array([
     [91, 92, 93, 94, 95, 96], # Nœud 16
     [97, 98, 99, 100, 101, 102], # Nœud 17
     [103, 104, 105, 106, 107, 108], # Nœud 18
-    [109, 110, 111, 112, 113, 114]  # Nœud 19
+    [109, 110, 111, 112, 113, 114], # Nœud 19
+    [115, 116, 117, 118, 119, 120], # Nœud 20
+    [121, 122, 123, 124, 125, 126], # Nœud 21
+    [127, 128, 129, 130, 131, 132], # Nœud 22
+    [133, 134, 135, 136, 137, 138], # Nœud 23
+    [139, 140, 141, 142, 143, 144], # Nœud 24
+    [145, 146, 147, 148, 149, 150], # Nœud 25
+    [151, 152, 153, 154, 155, 156], # Nœud 26
+    [157, 158, 159, 160, 161, 162], # Nœud 27
+    [163, 164, 165, 166, 167, 168], # Nœud 28
+    [169, 170, 171, 172, 173, 174], # Nœud 29
+    [175, 176, 177, 178, 179, 180], # Nœud 30
+    [181, 182, 183, 184, 185, 186], # Nœud 31
+    [187, 188, 189, 190, 191, 192], # Nœud 32
+    [193, 194, 195, 196, 197, 198]  # Nœud 33
 ])
+
+# Ajouter les degrés de liberté pour les nœuds principaux à la liste des degrés de liberté
+dofList.extend(main_dofs.flatten())
 
 # Ajouter les degrés de liberté pour les nœuds principaux à la liste des degrés de liberté
 dofList.extend(main_dofs.flatten())
