@@ -20,7 +20,6 @@ Jx = I  # Moment d'inertie polaire autour de l'axe x (supposé circulaire)
 elemList = []
 dofList = []
 nodeList = []
-local = []
 
 # Définir les nœuds principaux et leurs coordonnées
 main_nodes = np.array([
@@ -101,23 +100,25 @@ main_dofs = np.array([
 # Ajouter les degrés de liberté pour les nœuds principaux à la liste des degrés de liberté
 dofList.extend(main_dofs.flatten())
 
-# Ajout des nœuds intermédiaires et des degrés de liberté correspondants
-num_elements_per_beam = 4  # Nombre d'éléments par poutre
-for i in range(len(main_beams)):
-    start_node = main_beams[i, 0]
-    end_node = main_beams[i, 1]
-    for j in range(1, num_elements_per_beam):
-        node_id = len(nodeList) + 1
-        x = (nodeList[end_node - 1][0] - nodeList[start_node - 1][0]) * j / (num_elements_per_beam + 1) + nodeList[start_node - 1][0]
-        y = (nodeList[end_node - 1][1] - nodeList[start_node - 1][1]) * j / (num_elements_per_beam + 1) + nodeList[start_node - 1][1]
-        z = (nodeList[end_node - 1][2] - nodeList[start_node - 1][2]) * j / (num_elements_per_beam + 1) + nodeList[start_node - 1][2]
-        nodeList.append([x, y, z])
-        dofs = np.arange(len(dofList) + 1, len(dofList) + 7)
-        dofList.extend(dofs)
-        if j < num_elements_per_beam:
-            elemList.append([len(nodeList) - 1, node_id])
-        else:
-            elemList.append([len(nodeList) - 1, end_node])
+# Fonction pour ajouter les nœuds intermédiaires et les degrés de liberté correspondants
+def add_intermediate_nodes(num_elements_per_beam):
+    for i in range(len(main_beams)):
+        start_node = main_beams[i, 0]
+        end_node = main_beams[i, 1]
+        for j in range(1, num_elements_per_beam):
+            node_id = len(nodeList) + 1
+            node_start = np.array(nodeList[start_node - 1])
+            node_end = np.array(nodeList[end_node - 1])
+            x = (node_end[0] - node_start[0]) * j / (num_elements_per_beam + 1) + node_start[0]
+            y = (node_end[1] - node_start[1]) * j / (num_elements_per_beam + 1) + node_start[1]
+            z = (node_end[2] - node_start[2]) * j / (num_elements_per_beam + 1) + node_start[2]
+            nodeList.append([x, y, z])
+            dofs = np.arange(len(dofList) + 1, len(dofList) + 7)
+            dofList.extend(dofs)
+            if j < num_elements_per_beam:
+                elemList.append([len(nodeList) - 1, node_id])
+            else:
+                elemList.append([len(nodeList) - 1, end_node])
 
 # Fonction pour calculer la matrice de masse élémentaire
 def M_el(rho, A, l):
@@ -155,77 +156,14 @@ def get_locel(elem_id):
     end_dof = dofList[6 * (end_node - 1): 6 * end_node]
     return np.concatenate((start_dof, end_dof))
 
-# Initialisation des matrices globales
-total_dof = len(dofList)
-M_global = np.zeros((total_dof, total_dof))
-K_global = np.zeros((total_dof, total_dof))
-
-# Boucle à travers tous les éléments
-for elem_id in range(len(elemList)):
-    l = np.linalg.norm(nodeList[elemList[elem_id][1] - 1] - nodeList[elemList[elem_id][0] - 1])
-    M_el_ = M_el(rho, A, l)
-    K_el_ = K_el(E, G, Jx, A, l)
-    locel = get_locel(elem_id)
-
-    for i in range(12):
-        for j in range(12):
-            if locel[i] > 0 and locel[j] > 0:
-                M_global[locel[i]-1, locel[j]-1] += M_el_[i, j]
-                K_global[locel[i]-1, locel[j]-1] += K_el_[i, j]
-
-# Extraction des fréquences naturelles et des modes associés
-eigenvalues, eigenvectors = eigh(K_global, M_global)
-frequencies = np.sqrt(eigenvalues)
-
-# Affichage des six premières fréquences naturelles
-print("Six premières fréquences naturelles :")
-for i in range(6):
-    print(f"Fréquence {i+1}: {frequencies[i]:.2f} Hz")
-
-# Étude de convergence
-num_elements_per_beam = [1, 2, 4, 8]
-convergence_results = []
-
-for num_elem in num_elements_per_beam:
-    elemList = []
-    dofList = []
-    nodeList = []
-    local = []
-
-    # Définir les nœuds principaux et leurs coordonnées
-    nodeList.extend(main_nodes)
-
-    # Définir les poutres principales
-    elemList.extend(main_beams)
-
-    # Définir les degrés de liberté pour les nœuds principaux
-    dofList.extend(main_dofs.flatten())
-
-    # Ajouter les nœuds intermédiaires et les degrés de liberté correspondants
-    for i in range(len(main_beams)):
-        start_node = main_beams[i, 0]
-        end_node = main_beams[i, 1]
-        for j in range(1, num_elem):
-            node_id = len(nodeList) + 1
-            x = (nodeList[end_node - 1][0] - nodeList[start_node - 1][0]) * j / (num_elem + 1) + nodeList[start_node - 1][0]
-            y = (nodeList[end_node - 1][1] - nodeList[start_node - 1][1]) * j / (num_elem + 1) + nodeList[start_node - 1][1]
-            z = (nodeList[end_node - 1][2] - nodeList[start_node - 1][2]) * j / (num_elem + 1) + nodeList[start_node - 1][2]
-            nodeList.append([x, y, z])
-            dofs = np.arange(len(dofList) + 1, len(dofList) + 7)
-            dofList.extend(dofs)
-            if j < num_elem:
-                elemList.append([len(nodeList) - 1, node_id])
-            else:
-                elemList.append([len(nodeList) - 1, end_node])
-
-    # Initialisation des matrices globales
+# Fonction pour assembler les matrices globales
+def assemble_global_matrices():
     total_dof = len(dofList)
     M_global = np.zeros((total_dof, total_dof))
     K_global = np.zeros((total_dof, total_dof))
 
-    # Assemblage des matrices globales
     for elem_id in range(len(elemList)):
-        l = np.linalg.norm(nodeList[elemList[elem_id][1] - 1] - nodeList[elemList[elem_id][0] - 1])
+        l = np.linalg.norm(np.array(nodeList[elemList[elem_id][1] - 1]) - np.array(nodeList[elemList[elem_id][0] - 1]))
         M_el_ = M_el(rho, A, l)
         K_el_ = K_el(E, G, Jx, A, l)
         locel = get_locel(elem_id)
@@ -236,14 +174,60 @@ for num_elem in num_elements_per_beam:
                     M_global[locel[i]-1, locel[j]-1] += M_el_[i, j]
                     K_global[locel[i]-1, locel[j]-1] += K_el_[i, j]
 
-    # Extraction des fréquences naturelles et des modes associés
+    return M_global, K_global
+
+# Fonction pour extraire les fréquences naturelles et les modes associés
+def extract_frequencies(K_global, M_global):
     eigenvalues, eigenvectors = eigh(K_global, M_global)
-    frequencies = np.sqrt(eigenvalues)
+    frequencies = np.sqrt(np.maximum(eigenvalues, 0)) / (2 * np.pi)
+    return frequencies, eigenvectors
 
-    # Stockage des résultats
-    convergence_results.append((num_elem, frequencies[:6]))
+# Fonction pour effectuer l'étude de convergence
+def convergence_study():
+    num_elements_per_beam = [1, 2, 4, 8]
+    convergence_results = []
 
-# Affichage des résultats de l'étude de convergence
+    for num_elem in num_elements_per_beam:
+        global elemList, dofList, nodeList
+        elemList = []
+        dofList = []
+        nodeList = []
+
+        # Définir les nœuds principaux et leurs coordonnées
+        nodeList.extend(main_nodes)
+
+        # Définir les poutres principales
+        elemList.extend(main_beams)
+
+        # Définir les degrés de liberté pour les nœuds principaux
+        dofList.extend(main_dofs.flatten())
+
+        # Ajouter les nœuds intermédiaires et les degrés de liberté correspondants
+        add_intermediate_nodes(num_elem)
+
+        # Assemblage des matrices globales
+        M_global, K_global = assemble_global_matrices()
+
+        # Extraction des fréquences naturelles et des modes associés
+        frequencies, eigenvectors = extract_frequencies(K_global, M_global)
+
+        # Stockage des résultats
+        convergence_results.append((num_elem, frequencies[:6]))
+
+    return convergence_results
+
+# Main code execution
+add_intermediate_nodes(4)  # Ajouter les nœuds intermédiaires pour 4 éléments par poutre
+M_global, K_global = assemble_global_matrices()  # Assemblage des matrices globales
+frequencies, eigenvectors = extract_frequencies(K_global, M_global)  # Extraction des fréquences naturelles et des modes associés
+
+# Affichage des six premières fréquences naturelles
+print("Six premières fréquences naturelles :")
+for i in range(6):
+    print(f"Fréquence {i+1}: {frequencies[i]:.2f} Hz")
+
+# Étude de convergence
+convergence_results = convergence_study()
 for num_elem, frequencies in convergence_results:
     print(f"Nombre d'éléments par poutre: {num_elem}")
     for i in range(6):
@@ -251,5 +235,5 @@ for num_elem, frequencies in convergence_results:
 
 # Calcul de la masse totale du système
 masse_supporters = 51 * 80  # kg
-masse_totale = masse_supporters + np.sum(M_global)
+masse_totale = masse_supporters + np.sum(np.diag(M_global))
 print(f"Masse totale du système : {masse_totale:.2f} kg")
