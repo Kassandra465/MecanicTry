@@ -1,5 +1,9 @@
 import numpy as np
 from scipy.linalg import eigh
+from scipy.linalg import block_diag
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+import math as m
 
 # Propriétés matérielles de l'acier
 rho = 7800  # kg/m^3
@@ -11,18 +15,367 @@ G = E / (2 * (1 + nu))  # Module de cisaillement
 diametre_exterieur = 0.15  # m
 epaisseur_paroi = 0.005  # m
 
-
 # Calcul des propriétés de la section
 A = np.pi * (diametre_exterieur**2 - (diametre_exterieur - 2 * epaisseur_paroi)**2) / 4
 I = np.pi * (diametre_exterieur**4 - (diametre_exterieur - 2 * epaisseur_paroi)**4) / 64
-Jx = I  # Moment d'inertie polaire autour de l'axe x (supposé circulaire)
+Jx = 2*I  # Moment d'inertie polaire autour de l'axe x (supposé circulaire)
+
+div = 3
+
+global DEBUGG
+DEBUGG = False
+
+RESET = "\033[0m"
+RED = "\033[91m"
+GREEN = "\033[92m"
+MAGENTA = "\033[95m"
+BLUE = "\033[96m"
+
+class Tube:
+    ext_diameter = 0.150 # m
+    inner_diameter = 0.140 # m
+
+    ext_area = ext_diameter * m.pi**2
+    inner_area = inner_diameter * m.pi**2
+    tube_profile_area = ext_diameter - inner_diameter
+
+    def __init__(self, p1, p2):
+        """
+        Creates a Tube (with mass and volume)
+        """
+        self.p1 = p1
+        self.p2 = p2
+        self.len = p1.dist(p2)
+        self.volume = self.tube_profile_area * self.len
+        self.tube_mass = self.volume * rho
+        self.dudes_mass = 0
+        # if DEBUGG is True:
+            # print(f"New Tube created: legth: {self.len:0.2f} m, mass: {self.mass:0.1f} kg, volume: {self.volume:0.4f} m^3")
+
+    def set_dudes_mass(self, dudes_mass):
+        self.dudes_mass = dudes_mass
+
+    def get_total_mass(self):
+        return self.tube_mass + self.dudes_mass
+
+########################################################################################################
+
+class Point:
+    def __init__(self, x, y, z, name):
+        self.x = x
+        self.y = y
+        self.z = z
+        self.name = name
+
+    def xyz(self):
+        return (self.x, self.y, self.z)
+
+    def dist(self, other) -> float:
+        return m.sqrt((self.x - other.x)**2 + (self.y - other.y)**2 + (self.z - other.z)**2)
+
+    def __repr__(self):
+        return f"Point({self.x}, {self.y}, {self.z}, '{self.name}')"
+
+def create_rectangle(base_point, width, height, normal_axis, name_prefix, tilt=0):
+    """
+    Create a rectangular frame with an optional tilt in the z-axis.
+    Returns both the list of points and the adjacency list for the rectangle.
+    """
+    x, y, z = base_point.x, base_point.y, base_point.z
+
+    if normal_axis == 'z':
+        # Define points with tilt applied on one side
+        points = [
+            Point(x, y, z, f"{name_prefix}_A"),
+            Point(x + width, y, z - tilt, f"{name_prefix}_B"),
+            Point(x + width, y + height, z - tilt, f"{name_prefix}_C"),  # Apply tilt to this point
+            Point(x, y + height, z, f"{name_prefix}_D")  # Apply tilt to this point
+        ]
+    # No need for tilt for those
+    elif normal_axis == 'x':
+        points = [
+            Point(x, y, z, f"{name_prefix}_A"),
+            Point(x, y + width, z, f"{name_prefix}_B"),
+            Point(x, y + width, z + height, f"{name_prefix}_C"),
+            Point(x, y, z + height, f"{name_prefix}_D")
+        ]
+    elif normal_axis == 'y':
+        points = [
+            Point(x, y, z, f"{name_prefix}_A"),
+            Point(x + width, y, z, f"{name_prefix}_B"),
+            Point(x + width, y, z + height, f"{name_prefix}_C"),
+            Point(x, y, z + height, f"{name_prefix}_D")
+        ]
+
+    # Define the adjacency list for the rectangle
+    adjacency_list = {
+        points[0].name: [points[1].name, points[3].name],
+        points[1].name: [points[0].name, points[2].name],
+        points[2].name: [points[1].name, points[3].name],
+        points[3].name: [points[0].name, points[2].name]
+    }
+
+    return points, adjacency_list
+
+def create_cross(base_point, width, height, name_prefix):
+    """
+    Create a cross frame with a square in the center.
+    Returns both the list of points and the adjacency list for the cross.
+    """
+    x, y, z = base_point.x, base_point.y, base_point.z
+
+    # Define points for the cross
+    points = [
+        Point(x, y, z, f"{name_prefix}_A"),
+        Point(x, y + width, z, f"{name_prefix}_B"),
+        Point(x, y + width, z + height, f"{name_prefix}_C"),
+        Point(x, y, z + height, f"{name_prefix}_D"),
+        Point(x, y + width / 2, z + height / 2, f"{name_prefix}_Center")
+    ]
+
+    # Define the adjacency list for the cross
+    adjacency_list = {
+        points[0].name: [points[1].name, points[3].name, points[4].name],
+        points[1].name: [points[0].name, points[2].name, points[4].name],
+        points[2].name: [points[1].name, points[3].name, points[4].name],
+        points[3].name: [points[0].name, points[2].name, points[4].name],
+        points[4].name: [points[0].name, points[1].name, points[2].name, points[3].name]
+    }
+
+    return points, adjacency_list
+
+def create_cross_no_bottom(base_point, width, height, name_prefix):
+    """
+    Create a cross frame with a square in the center.
+    Returns both the list of points and the adjacency list for the cross.
+    """
+    x, y, z = base_point.x, base_point.y, base_point.z
+
+    # Define points for the cross
+    points = [
+        Point(x, y, z, f"{name_prefix}_A"),
+        Point(x, y + width, z, f"{name_prefix}_B"),
+        Point(x, y + width, z + height, f"{name_prefix}_C"),
+        Point(x, y, z + height, f"{name_prefix}_D"),
+        Point(x, y + width / 2, z + height / 2, f"{name_prefix}_Center")
+    ]
+
+    # Define the adjacency list for the cross
+    adjacency_list = {
+        points[0].name: [points[3].name, points[4].name],
+        points[1].name: [points[2].name, points[4].name],
+        points[2].name: [points[1].name, points[3].name, points[4].name],
+        points[3].name: [points[0].name, points[2].name, points[4].name],
+        points[4].name: [points[0].name, points[1].name, points[2].name, points[3].name]
+    }
+
+    return points, adjacency_list
+
+def are_points_equal(p1, p2, tolerance=1e-6):
+    """Check if two points are close enough to be considered the same."""
+    return abs(p1.x - p2.x) < tolerance and abs(p1.y - p2.y) < tolerance and abs(p1.z - p2.z) < tolerance
+
+def merge_adjacency_lists(points1, adj_list1, points2, adj_list2):
+    """Merge two adjacency lists by combining touching points."""
+    merged_points = points1.copy()
+    merged_adj_list = {p.name: set(adj) for p, adj in zip(merged_points, adj_list1.values())}
+
+    # Create a mapping from point names to points for efficient lookup
+    point_name_map = {p.name: p for p in merged_points}
+
+    # Process points from the second graph
+    for p2 in points2:
+        if p2.name in point_name_map:
+            # If there's a match, merge the adjacency lists
+            merged_adj_list[p2.name].update(adj_list2.get(p2.name, []))
+        else:
+            # If no match, add the new point and its adjacency
+            merged_points.append(p2)
+            merged_adj_list[p2.name] = set(adj_list2.get(p2.name, []))
+
+    return merged_points, {name: list(neighbors) for name, neighbors in merged_adj_list.items()}
+
+def plot_structure(points, adjacency_list, show_labels=False):
+    fig = plt.figure(figsize=(12, 8))
+    ax = fig.add_subplot(111, projection='3d')
+
+    # Plot each point
+    for point in points:
+        ax.scatter(point.x, point.y, point.z, s=100)  # Larger dots
+        # Display the point name if show_labels is True
+        if show_labels:
+            ax.text(point.x, point.y, point.z, point.name, fontsize=9, ha='right')
+
+    # Plot edges based on adjacency list
+    point_name_map = {p.name: p for p in points}
+    for point in points:
+        if point.name in adjacency_list:
+            for neighbor_name in adjacency_list[point.name]:
+                if neighbor_name in point_name_map:
+                    neighbor = point_name_map[neighbor_name]
+                    ax.plot([point.x, neighbor.x], [point.y, neighbor.y], [point.z, neighbor.z], 'b-')
+                else:
+                    print(f"Warning: Neighbor {neighbor_name} not found for point {point.name}")
+
+    # Set axis labels (optional)
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+    plt.show()
+
+def get_point_graph():
+    all_points = list()
+    combined_adj_list = dict()
+
+    base_point = Point(0, 0, 0, "CrossBaseA")
+    width, height = 2, 2.5
+    andré_1, cross_adj_list = create_cross_no_bottom(base_point, width, height, "CrossA")
+    all_points, combined_adj_list = merge_adjacency_lists(all_points, combined_adj_list, andré_1, cross_adj_list)
+
+    base_point = Point(0, 0, height, "CrossBaseB")
+    andré_2, cross_adj_list = create_cross(base_point, width, height, "CrossB")
+    all_points, combined_adj_list = merge_adjacency_lists(all_points, combined_adj_list, andré_2, cross_adj_list)
+
+    height = 1.5
+    base_point = Point(4, 0, 0, "CrossBaseC")
+    andré_3, cross_adj_list = create_cross_no_bottom(base_point, width, height, "CrossC")
+    all_points, combined_adj_list = merge_adjacency_lists(all_points, combined_adj_list, andré_3, cross_adj_list)
+    base_point = Point(4, 0, height, "CrossBaseD")
+    andré_4, cross_adj_list = create_cross(base_point, width, height, "CrossD")
+    all_points, combined_adj_list = merge_adjacency_lists(all_points, combined_adj_list, andré_4, cross_adj_list)
+
+    height = 1
+    base_point = Point(8, 0, 0, "CrossBaseE")
+    andré_5, cross_adj_list = create_cross_no_bottom(base_point, width, height, "CrossE")
+    all_points, combined_adj_list = merge_adjacency_lists(all_points, combined_adj_list, andré_5, cross_adj_list)
+
+
+    # Create  + i * height8 tilted rectangles with increasing z-offset and combine adjacency lists
+    base_point = Point(0, 0, 5, "Base")
+    tilt = 0.5
+    width, height = 1, 2
+
+    for i in range(8):
+        # Create a new rectangle with increasing z offset
+        rect_points, rect_adj_list = create_rectangle(
+            Point(base_point.x + i, base_point.y, base_point.z - (i * tilt), f"Rect{i}_Base"),
+            width, height, normal_axis='z', name_prefix=f"Rect{i+1}", tilt=tilt
+        )
+        # Merge the new rectangle with the combined structure
+        all_points, combined_adj_list = merge_adjacency_lists(all_points, combined_adj_list, rect_points, rect_adj_list)
+    return all_points, combined_adj_list
+
+def make_point_graph_object_reference(all_points: list, point_graph_by_name: dict):
+    """
+    Convert a name-based adjacency graph:
+    point_name (str): [point_name (str), ...]
+    to an object-based adjacency graph:
+    Point (object): [Point, Point, ...]
+
+    If two points have the same coordinates, only one is kept, and their adjacency lists are merged.
+    """
+    # Initialize the reference-based graph
+    point_graph_by_object = {}
+
+    # Map to store points by their coordinates (to handle duplicates)
+    coord_map = {}
+
+    # Build the point graph with objects
+    for point in all_points:
+        coord_key = point.xyz()
+
+        # Check if we already have a point at this coordinate
+        if coord_key in coord_map:
+            existing_point = coord_map[coord_key]
+
+            # Merge adjacency lists from `point_graph_by_name`
+            existing_adj_names = point_graph_by_name.get(existing_point.name, [])
+            new_adj_names = point_graph_by_name.get(point.name, [])
+
+            # Ensure all names are unique before mapping to Point objects
+            merged_adj_names = set(existing_adj_names + new_adj_names)
+            point_graph_by_object[existing_point] = [
+                next(p for p in all_points if p.name == adj_name)
+                for adj_name in merged_adj_names
+            ]
+        else:
+            # No duplicate found, add point to coord_map and graph
+            coord_map[coord_key] = point
+            adj_names = point_graph_by_name.get(point.name, [])
+            point_graph_by_object[point] = [
+                next(p for p in all_points if p.name == adj_name)
+                for adj_name in adj_names
+            ]
+
+    return point_graph_by_object
+
+def point_graph_to_tube_graph(point_graph: dict):
+    """
+    Create for all edges of the graph a tube
+    """
+    # tuple[tuple[x,y,z], tuple[x,y,z]] : Tube
+    tube_graph = {}
+    colors = [RED, BLUE, GREEN, MAGENTA]
+    c = 0
+
+    for point, connections in point_graph.items():
+        c = (c + 1) % 4
+        for link in connections:
+            # Get the key as a tuple of both points
+            key = (point.xyz(), link.xyz())
+            key2 = (link.xyz(), point.xyz())
+
+            # Check if both key exist before inserting into the tube_graph
+            if tube_graph.get(key, None) is not None:
+                continue
+            if tube_graph.get(key2, None) is not None:
+                continue
+            if DEBUGG is True:
+                print(f"{colors[c]}Creating tube between: name: {point.name} p1: {point.xyz()} p2: {link.xyz()}", RESET)
+            # The tube doesn't exist yet so create it
+            tube_graph[key] = Tube(point, link)
+    return tube_graph
+
+def get_total_mass(tube_graph: dict):
+    tube_count = 0
+    total_mass = 0
+    for _, tube in tube_graph.items():
+        total_mass += tube.get_total_mass()
+        tube_count += 1
+    return tube_count, total_mass
+
+if __name__ == "__main__":
+
+    all_points, point_graph_by_name = get_point_graph()
+    plot_structure(all_points, point_graph_by_name)
+
+    # make a point graph by object
+    point_graph = make_point_graph_object_reference(all_points, point_graph_by_name)
+
+    # tuple[tuple[x,y,z], tuple[x,y,z]] : Tube
+    tube_graph = point_graph_to_tube_graph(point_graph)
+    total_tube_count, total_mass_structure = get_total_mass(tube_graph)
+
+    one_dude_mass = 80
+    dudes_count = 51
+    all_dudes_mass = dudes_count * one_dude_mass
+
+    print(f"\033[92mTotal mass of the supporters:\033[0m {all_dudes_mass:0.1f} kg for {dudes_count} supporters")
+    print(f"\033[92mTotal mass of the structure:\033[0m {total_mass_structure :0.1f} kg for {total_tube_count} tubes")
+    print(f"\033[92mTotal mass:\033[0m {total_mass_structure + all_dudes_mass:0.1f} kg")
+
+########################################################################################################
+########################################################################################################
+########################################################################################################
+########################################################################################################
+########################################################################################################
 
 # Initialisation des listes et matrices
 elemList = []
 dofList = []
 nodeList = []
 
-# Définir les nœuds principaux et leurs coordonnées
+# Définir les nœuds principaux et leurs coordonnées (Structural axis)
 main_nodes = np.array([
     [0, 0, 5],      # Nœud 1
     [0, 2, 5],      # Nœud 2
@@ -58,9 +411,6 @@ main_nodes = np.array([
     [4, 1, 2.25],   # Nœud 32
     [8, 1, 0.5]     # Nœud 33
 ])
-
-# Ajouter les nœuds principaux à la liste des nœuds
-nodeList.extend(main_nodes)
 
 # Définir les poutres principales
 main_beams = np.array([
@@ -124,9 +474,6 @@ main_beams = np.array([
     [28, 33]  # Poutre 58
 ])
 
-# Ajouter les poutres principales à la liste des éléments
-elemList.extend(main_beams)
-
 # Définir les degrés de liberté pour les nœuds principaux
 main_dofs = np.array([
     [1, 2, 3, 4, 5, 6],    # Nœud 1
@@ -164,62 +511,75 @@ main_dofs = np.array([
     [193, 194, 195, 196, 197, 198]  # Nœud 33
 ])
 
+#Definir la discretization FEM
+def generate_dividedNodes_coord(node1, node2, div):
+    nodeList_div = []
+    for i in range(1, div + 1):
+        frac = i / (div + 1)
+        new_x = node1[0] + (node2[0] - node1[0]) * frac
+        new_y = node1[1] + (node2[1] - node1[1]) * frac
+        new_z = node1[2] + (node2[2] - node1[2]) * frac
+        nodeList_div.append([new_x, new_y, new_z])
+
+    return nodeList_div
+
+def create_nodeList_div(elemList):
+    nodeList_div = []
+
+    for i in range(len(elemList)):
+        current_elem = elemList[i]
+        start = current_elem[0]
+        end = current_elem[1]
+
+        nodeList_tem = generate_dividedNodes_coord(node1 = nodeList[start - 1],
+                                                   node2 = nodeList[end - 1], div=div)
+        nodeList_div += nodeList_tem
+
+    return nodeList_div
+
+# Ajouter les nœuds principaux à la liste des nœuds
+nodeList.extend(main_nodes)
+
+# Ajouter les poutres principales à la liste des éléments
+elemList.extend(main_beams)
+nodeList = create_nodeList_div(elemList)
+
 # Ajouter les degrés de liberté pour les nœuds principaux à la liste des degrés de liberté
 dofList.extend(main_dofs.flatten())
 
-# Fonction pour ajouter les nœuds intermédiaires et les degrés de liberté correspondants
-def add_intermediate_nodes(num_elements_per_beam):
-    for i in range(len(main_beams)):
-        start_node = main_beams[i, 0]
-        end_node = main_beams[i, 1]
-        for j in range(1, num_elements_per_beam):
-            node_id = len(nodeList) + 1
-            node_start = np.array(nodeList[start_node - 1])
-            node_end = np.array(nodeList[end_node - 1])
-            x = (node_end[0] - node_start[0]) * j / (num_elements_per_beam + 1) + node_start[0]
-            y = (node_end[1] - node_start[1]) * j / (num_elements_per_beam + 1) + node_start[1]
-            z = (node_end[2] - node_start[2]) * j / (num_elements_per_beam + 1) + node_start[2]
-            nodeList.append([x, y, z])
-            dofs = np.arange(len(dofList) + 1, len(dofList) + 7)
-            dofList.extend(dofs)
-            if j < num_elements_per_beam:
-                elemList.append([len(nodeList) - 1, node_id])
-            else:
-                elemList.append([len(nodeList) - 1, end_node])
-
-# Fonction pour calculer la matrice de masse élémentaire
+# Fonction pour calculer la matrice de masse élémentaire (Local axis)
 def M_el(rho, A, l):
     r = np.sqrt(I / A)  # Rayon de giration approximatif
     return rho * A * l * np.array([
-        [1/3, 0, 0, 0, 0, 0, 1/6, 0, 0, 0, 0, 0],
-        [0, 13/35, 0, 0, 0, 11*l/210, 0, 9/70, 0, 0, 0, -13*l/420],
-        [0, 0, 13/35, 0, -11*l/210, 0, 0, 0, 9/70, 0, 13*l/420, 0],
-        [0, 0, 0, r**2/3, 0, 0, 0, 0, 0, r**2/6, 0, 0],
-        [0, 0, -11*l/210, 0, l**2/105, 0, 0, 0, -13*l/420, 0, -l**2/140, 0],
-        [0, 11*l/210, 0, 0, 0, l**2/105, 0, 13*l/420, 0, 0, 0, -l**2/140],
-        [1/6, 0, 0, 0, 0, 0, 1/3, 0, 0, 0, 0, 0],
-        [0, 9/70, 0, 0, 0, 13*l/420, 0, 13/35, 0, 0, 0, -11*l/210],
-        [0, 0, 9/70, 0, -13*l/420, 0, 0, 0, 13/35, 0, 11*l/210, 0],
-        [0, 0, 0, r**2/6, 0, 0, 0, 0, 0, r**2/3, 0, 0],
-        [0, 0, 13*l/420, 0, -l**2/140, 0, 0, 0, 11*l/210, 0, l**2/105, 0],
-        [0, -13*l/420, 0, 0, 0, -l**2/140, 0, -11*l/210, 0, 0, 0, l**2/105]
+        [1 / 3, 0, 0, 0, 0, 0, 1 / 6, 0, 0, 0, 0, 0],
+        [0, 13 / 35, 0, 0, 0, 11 * l / 210, 0, 9 / 70, 0, 0, 0, -13 * l / 420],
+        [0, 0, 13 / 35, 0, -11 * l / 210, 0, 0, 0, 9 / 70, 0, 13 * l / 420, 0],
+        [0, 0, 0, r ** 2 / 3, 0, 0, 0, 0, 0, r ** 2 / 6, 0, 0],
+        [0, 0, -11 * l / 210, 0, l ** 2 / 105, 0, 0, 0, -13 * l / 420, 0, -l ** 2 / 140, 0],
+        [0, 11 * l / 210, 0, 0, 0, l ** 2 / 105, 0, 13 * l / 420, 0, 0, 0, -l ** 2 / 140],
+        [1 / 6, 0, 0, 0, 0, 0, 1 / 3, 0, 0, 0, 0, 0],
+        [0, 9 / 70, 0, 0, 0, 13 * l / 420, 0, 13 / 35, 0, 0, 0, -11 * l / 210],
+        [0, 0, 9 / 70, 0, -13 * l / 420, 0, 0, 0, 13 / 35, 0, 11 * l / 210, 0],
+        [0, 0, 0, r ** 2 / 6, 0, 0, 0, 0, 0, r ** 2 / 3, 0, 0],
+        [0, 0, 13 * l / 420, 0, -l ** 2 / 140, 0, 0, 0, 11 * l / 210, 0, l ** 2 / 105, 0],
+        [0, -13 * l / 420, 0, 0, 0, -l ** 2 / 140, 0, -11 * l / 210, 0, 0, 0, l ** 2 / 105]
     ])
 
-# Fonction pour calculer la matrice de rigidité élémentaire
+# Fonction pour calculer la matrice de rigidité élémentaire (Local axis)
 def K_el(E, G, Jx, A, l):
     return E * A / l * np.array([
         [1, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 0],
-        [0, 12/l**2, 0, 0, 0, 6/l, 0, -12/l**2, 0, 0, 0, 6/l],
-        [0, 0, 12/l**2, 0, -6/l, 0, 0, 0, -12/l**2, 0, -6/l, 0],
-        [0, 0, 0, G*Jx/l, 0, 0, 0, 0, 0, -G*Jx/l, 0, 0],
-        [0, 0, -6/l, 0, 4/l, 0, 0, 0, 6/l, 0, 2/l, 0],
-        [0, 6/l, 0, 0, 0, 2/l, 0, -6/l, 0, 0, 0, 4/l],
+        [0, 12 / l ** 2, 0, 0, 0, 6 / l, 0, -12 / l ** 2, 0, 0, 0, 6 / l],
+        [0, 0, 12 / l ** 2, 0, -6 / l, 0, 0, 0, -12 / l ** 2, 0, -6 / l, 0],
+        [0, 0, 0, G * Jx / l, 0, 0, 0, 0, 0, -G * Jx / l, 0, 0],
+        [0, 0, -6 / l, 0, 4 / l, 0, 0, 0, 6 / l, 0, 2 / l, 0],
+        [0, 6 / l, 0, 0, 0, 2 / l, 0, -6 / l, 0, 0, 0, 4 / l],
         [-1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
-        [0, -12/l**2, 0, 0, 0, -6/l, 0, 12/l**2, 0, 0, 0, -6/l],
-        [0, 0, -12/l**2, 0, 6/l, 0, 0, 0, 12/l**2, 0, 6/l, 0],
-        [0, 0, 0, -G*Jx/l, 0, 0, 0, 0, 0, G*Jx/l, 0, 0],
-        [0, 0, -6/l, 0, 2/l, 0, 0, 0, 6/l, 0, 4/l, 0],
-        [0, 6/l, 0, 0, 0, 4/l, 0, -6/l, 0, 0, 0, 2/l]
+        [0, -12 / l ** 2, 0, 0, 0, -6 / l, 0, 12 / l ** 2, 0, 0, 0, -6 / l],
+        [0, 0, -12 / l ** 2, 0, 6 / l, 0, 0, 0, 12 / l ** 2, 0, 6 / l, 0],
+        [0, 0, 0, -G * Jx / l, 0, 0, 0, 0, 0, G * Jx / l, 0, 0],
+        [0, 0, -6 / l, 0, 2 / l, 0, 0, 0, 6 / l, 0, 4 / l, 0],
+        [0, 6 / l, 0, 0, 0, 4 / l, 0, -6 / l, 0, 0, 0, 2 / l]
     ])
 
 # Fonction pour obtenir le vecteur de localisation pour un élément
@@ -229,6 +589,31 @@ def get_locel(elem_id):
     start_dof = dofList[6 * (start_node - 1): 6 * start_node]
     end_dof = dofList[6 * (end_node - 1): 6 * end_node]
     return np.concatenate((start_dof, end_dof))
+
+def computeT(elem_id):
+    node_1 = nodeList[elemList[elem_id][0] - 1]  # Node 1 (Structural axis)
+    node_2 = nodeList[elemList[elem_id][1] - 1]  # Node 2 (Structural axis)
+    node_3 = [-100, -100, -100]  # Not collinear
+
+    l = np.linalg.norm(np.array(node_2) - np.array(node_1))
+    ex = np.array([0.0, 0.0, 0.0])
+    for i in range(3):
+        ex[i] = (node_2[i] - node_1[i]) / l
+
+    d_2 = np.array([node_2[0] - node_1[0], node_2[1] - node_1[1], node_2[2] - node_1[2]])
+    d_3 = np.array([node_3[0] - node_1[0], node_3[1] - node_1[1], node_3[2] - node_1[2]])
+
+    cross_product = np.cross(d_3, d_2)
+    ey = cross_product / np.linalg.norm(cross_product)
+    ez = np.cross(ey, ex)
+
+    R = np.array([
+        [ex[0], ex[1], ex[2]],
+        [ey[0], ey[1], ey[2]],
+        [ez[0], ez[1], ez[2]]
+    ])
+    T = block_diag(R, R, R, R)
+    return T
 
 # Fonction pour assembler les matrices globales
 def assemble_global_matrices():
@@ -240,15 +625,31 @@ def assemble_global_matrices():
         l = np.linalg.norm(np.array(nodeList[elemList[elem_id][1] - 1]) - np.array(nodeList[elemList[elem_id][0] - 1]))
         M_el_ = M_el(rho, A, l)
         K_el_ = K_el(E, G, Jx, A, l)
+        T = computeT(elem_id)
+        M_el_global = T.T @ M_el_ @ T
+        K_el_global = T.T @ K_el_ @ T
         locel = get_locel(elem_id)
 
         for i in range(12):
             for j in range(12):
                 if locel[i] > 0 and locel[j] > 0:
-                    M_global[locel[i]-1, locel[j]-1] += M_el_[i, j]
-                    K_global[locel[i]-1, locel[j]-1] += K_el_[i, j]
+                    M_global[locel[i] - 1, locel[j] - 1] += M_el_global[i, j]
+                    K_global[locel[i] - 1, locel[j] - 1] += K_el_global[i, j]
 
     return M_global, K_global
+
+# Fonction pour appliquer les contraintes
+def apply_constraints(K_global, M_global):
+    fixed_nodes = [18, 19, 22, 23, 26, 27]
+    fixed_dofs = []
+    for node in fixed_nodes:
+        fixed_dofs.extend([6 * (node - 1) + i for i in range(6)])
+
+    # Supprimer les lignes et colonnes correspondant aux degrés de liberté fixés
+    K_global = np.delete(np.delete(K_global, fixed_dofs, axis=0), fixed_dofs, axis=1)
+    M_global = np.delete(np.delete(M_global, fixed_dofs, axis=0), fixed_dofs, axis=1)
+
+    return K_global, M_global
 
 # Fonction pour extraire les fréquences naturelles et les modes associés
 def extract_frequencies(K_global, M_global):
@@ -276,9 +677,6 @@ def convergence_study():
         # Définir les degrés de liberté pour les nœuds principaux
         dofList.extend(main_dofs.flatten())
 
-        # Ajouter les nœuds intermédiaires et les degrés de liberté correspondants
-        add_intermediate_nodes(num_elem)
-
         # Assemblage des matrices globales
         M_global, K_global = assemble_global_matrices()
 
@@ -290,9 +688,21 @@ def convergence_study():
 
     return convergence_results
 
+# Fonction pour tracer l'étude de convergence
+def plot_convergence_study(element_counts, frequencies):
+    plt.figure(figsize=(10, 6))
+    for i in range(6):
+        plt.plot(element_counts, frequencies[:, i], marker='o', label=f'Mode {i + 1}')
+    plt.xlabel('Number of Elements per Beam')
+    plt.ylabel('Natural Frequency (Hz)')
+    plt.title('Convergence Study')
+    plt.legend()
+    plt.grid()
+    plt.show()
+
 # Main code execution
-add_intermediate_nodes(4)  # Ajouter les nœuds intermédiaires pour 4 éléments par poutre
 M_global, K_global = assemble_global_matrices()  # Assemblage des matrices globales
+K_global, M_global = apply_constraints(K_global, M_global)  # Appliquer les contraintes
 frequencies, eigenvectors = extract_frequencies(K_global, M_global)  # Extraction des fréquences naturelles et des modes associés
 
 # Affichage des six premières fréquences naturelles
@@ -300,14 +710,20 @@ print("Six premières fréquences naturelles :")
 for i in range(6):
     print(f"Fréquence {i+1}: {frequencies[i]:.2f} Hz")
 
-# Étude de convergence
-convergence_results = convergence_study()
-for num_elem, frequencies in convergence_results:
-    print(f"Nombre d'éléments par poutre: {num_elem}")
-    for i in range(6):
-        print(f"Fréquence {i+1}: {frequencies[i]:.2f} Hz")
+# Calculate natural frequencies and mode shapes
+def compute_natural_frequencies_and_modes(M_global, K_global):
+    eigenvalues, mode_shapes = eigh(K_global, M_global)
+    natural_frequencies = np.sqrt(np.abs(eigenvalues)) / (2 * np.pi)
+    return natural_frequencies, mode_shapes
 
 # Calcul de la masse totale du système
 masse_supporters = 51 * 80  # kg
 masse_totale = masse_supporters + np.sum(np.diag(M_global))
 print(f"Masse totale du système : {masse_totale:.2f} kg")
+
+a = computeT(0)
+b = M_global
+print(a)
+print("M_global :\n", b)
+
+ #plot_convergence_study()
