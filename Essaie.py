@@ -17,7 +17,7 @@ I = np.pi * (diametre_exterieur**4 - (diametre_exterieur - 2 * epaisseur_paroi)*
 Jx = 2 * I  # [m**4]
 G = E / (2 * (1 + nu))  # Shear modulus
 
-div = 3  # Number of beams' divisions (=> (div+1) is the number of elements per beam).
+div = 0  # Number of beams' divisions (=> (div+1) is the number of elements per beam).
 
 # Initialisation des listes et matrices
 elemList = []
@@ -154,7 +154,7 @@ nodeList.extend(main_nodes)
 
 # Ajouter les poutres principales à la liste des éléments
 elemList.extend(main_beams)
-    #nodeList = create_nodeList_div(elemList)
+nodeList = create_nodeList_div(elemList)
 
 nbr_main_nodes = 33  # Number of nodes of the main structure (without any divisions (i.e. 1 element per beam)).
 nbr_final_nodes = nbr_main_nodes + div * len(elemList)  # Total number of nodes for the WHOLE structure.
@@ -198,7 +198,6 @@ def M_el(rho, A, l):
         [0, -13 * l / 420, 0, 0, 0, -l ** 2 / 140, 0, -11 * l / 210, 0, 0, 0, l ** 2 / 105]
     ])
 
-
 # Fonction pour calculer la matrice de rigidité élémentaire (Local axis)
 def K_el(E, G, Jx, A, l, I):
     return np.array([[E*A / l, 0, 0, 0, 0, 0, -E*A / l, 0, 0, 0, 0, 0],
@@ -215,19 +214,17 @@ def K_el(E, G, Jx, A, l, I):
                     [0, 6*E*I / l**2, 0, 0, 0, 2*E*I / l, 0, -6*E*I / l**2, 0, 0, 0, 4*E*I / l]])
 
 # Fonction pour obtenir le vecteur de localisation pour un élément
-def create_locel():
-    locel_final = []
+def get_locel(elem_id):
+    current_elem = elemList[elem_id]
+    start_node = current_elem[0]
+    end_node = current_elem[1]
+    return dofList[start_node - 1][:] + dofList[end_node - 1][:]
 
-    for i in range(len(elemList)):
-        current_elem = elemList[i]
-        start_node = current_elem[0]
-        end_node = current_elem[1]
+def get_locelnode0(node_id):
+    return dofList[node_id][:]
 
-        tem = dofList[start_node - 1][:] + dofList[end_node - 1][:]
-        locel_final.append(tem)
-
-    return locel_final
-locel = create_locel()
+def get_locelnode1(node_id):
+    return dofList[node_id - 1][:]
 
 def Rotation_fonction (elem_id):
     node_1 = nodeList[elemList[elem_id][0] - 1]  # Node 1 (Structural axis)
@@ -254,7 +251,7 @@ def Rotation_fonction (elem_id):
     return R
 
 # This function will generate the Global (For the Whole Structure) Mass matrix (M_s) and Stiffness matrix (K_s).
-def Generate_Ms_Ks():
+def Generate_Ms_Ks(elem_id):
     total_dof = len(dofList)
     M_s = np.zeros((total_dof, total_dof))
     K_s = np.zeros((total_dof, total_dof))
@@ -265,19 +262,19 @@ def Generate_Ms_Ks():
         current_elem = elemList[i]
         start_node = current_elem[0]
         end_node = current_elem[1]
-        node1 = nodeList[start_node - 1]
-        node2 = nodeList[end_node - 1]
+        node1 = main_nodes[start_node - 1]
+        node2 = main_nodes[end_node - 1]
         l = np.sqrt((node2[0] - node1[0]) ** 2 + (node2[1] - node1[1]) ** 2 + (node2[2] - node1[2]) ** 2)
         M_el_ = M_el(rho, A, l)
         K_el_ = K_el(E, G, Jx, A, l, I)
 
-        R = Rotation_fonction(node1=node1, node2=node2)
+        R = Rotation_fonction(elem_id)
         T = block_diag(R, R, R, R)
 
         M_e_S = T.T @ M_el_ @ T
         K_e_S = T.T @ K_el_ @ T
 
-        locel_e = locel[i]  # locel_e is the locel for the current element.
+        locel_e = get_locel(i)  # locel_e is the locel for the current element.
 
         # This is used to compute the Total Mass of the Structure, where "u_e" is a full vector of 1 with the same shape of M_el
         # and it represents the Rigid Body Mode (without any deformation, only translation).
@@ -292,32 +289,68 @@ def Generate_Ms_Ks():
                 K_s[kk][ss] += K_e_S[k][s]
                 M_s[kk][ss] += M_e_S[k][s]
 
-    # Adding lumped mass to specific nodes
-    nodes_with_mass = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
-    for node in nodes_with_mass:
-        dof_indices = dofList[6*node: 6*node + 6]
-        for dof in dof_indices:
-            M_s[dof-1, dof-1] += 80*51/18
-
-    # Applying boundary conditions by zeroing out specific rows and columns
-    locels = np.array([get_locelnode1(38), get_locelnode0(33), get_locelnode0(50), get_locelnode0(51), get_locelnode1(52), get_locelnode1(53)])
-    loc = locels.flatten()
-
-    for k in range(len(loc)):
-        idx = loc[k] - 1
-        M_s[idx, :] = 0
-        K_s[idx, :] = 0
-        M_s[:, idx] = 0
-        K_s[:, idx] = 0
-
     masse_supporters = 51 * 80  # kg
     total_mass += masse_supporters  # At last place, add the lumped mass to the total mass for the whole structure.
     print(f'Total MASS = {total_mass} [kg]')
 
     return K_s, M_s
 
-# One gets the final/global stiffness and mass matrices.
-K_s, M_s = Generate_Ms_Ks()
+# Function to assemble global matrices
+def assemble_global_matrices():
+    nodes_with_mass = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
+    total_dof = len(dofList)
+    M_global1 = np.zeros((total_dof, total_dof))
+    K_global1 = np.zeros((total_dof, total_dof))
+
+    for elem_id in range(len(elemList)):
+
+        K_s, M_s = Generate_Ms_Ks(elem_id)
+
+        locel = get_locel(elem_id)
+
+        for i in range(12):
+            for j in range(12):
+                if locel[i] > 0 and locel[j] > 0:
+                    M_global1[locel[i] - 1, locel[j] - 1] += M_s[i, j]
+                    K_global1[locel[i] - 1, locel[j] - 1] += K_s[i, j]
+
+    loc = []
+
+    locels = np.array(
+        [get_locelnode1(18), get_locelnode0(19), get_locelnode0(22), get_locelnode0(23), get_locelnode1(26),
+         get_locelnode1(27)])
+
+    loc.extend(locels.flatten())
+    for node in nodes_with_mass:
+        dof_indices = dofList[6 * node: 6 * node + 2]
+        for dof in dof_indices:
+            M_global1[dof - 1, dof - 1] += 80 * 51 / 18
+
+    fixed_nodes = [18, 19, 22, 23, 26, 27]  # these nodes are clamped nodes (All their dofs are blocked).
+    fixedDof_final = []
+
+    for i in range(len(fixed_nodes)):
+        current_node = fixed_nodes[i]
+
+        tem = dofList[current_node - 1][:]
+        fixedDof_final += tem
+
+    return fixedDof_final
+
+    # Apply the Fixed BCs.
+    fixed_dof = create_fixedDof()
+
+    rows_to_delete = fixed_dof
+    columns_to_delete = fixed_dof
+    # Deleting the specified rows and columns of the K_s and M_s.
+    K_global1 = np.delete(np.delete(K_global1, rows_to_delete, axis=0), columns_to_delete, axis=1)
+    M_global1 = np.delete(np.delete(M_global1, rows_to_delete, axis=0), columns_to_delete, axis=1)
+
+    return M_global1, K_global1
+
+
+##### Applying the Boundary Conditions (BCs)
+
 
 # Fonction pour extraire les fréquences naturelles et les modes associés
 def extract_frequencies(K_global, M_global):
@@ -393,9 +426,9 @@ def Draw_Structure(main_dofs, mode):
 
 #        Calcul Eig + shape
 
-def Calcul_Eig(M_s, K_s, draw=True):
+def Calcul_Eig(M_global1, K_global1, draw=True):
     # Calcul Eigen values and vectors (Shapes).
-    w_carre, eigenModes = linalg.eig(K_s, M_s)
+    w_carre, eigenModes = linalg.eig(K_global1, M_global1)
     w_carre = np.array(w_carre)  # np.array is used for doing some operations.
     w = np.sqrt(w_carre)  # Pay attention that this w is in [rad/s].
 
@@ -409,7 +442,7 @@ def Calcul_Eig(M_s, K_s, draw=True):
     print(f'\n##################### sorted Eigen/Normal Frequencies (div = {div}): #####################')
     print(sorted_eigenFreq[:6].real)
 
-    return K_s, M_s, sorted_eigenFreq, sorted_eigenModes
+    return M_global1, K_global1, sorted_eigenFreq, sorted_eigenModes
 
 def draw_EigenModes(x):
     nbr_modes = 6  # number of normal modes to draw (deformed structure).
@@ -432,9 +465,9 @@ def draw_EigenModes(x):
 #==================#
 #       Main       #
 #==================#
-K_s, M_s, w, x = Calcul_Eig(M_s=M_s, K_s=K_s)
 M_global, K_global = assemble_global_matrices()  # Assemblage des matrices globales
-K_global, M_global = apply_constraints(K_global, M_global)  # Appliquer les contraintes
+K_global1, M_global1, w, x = Calcul_Eig(M_global, K_global)
+
 frequencies, eigenvectors = extract_frequencies(K_global, M_global)  # Extraction des fréquences naturelles et des modes associés
 draw_EigenModes(x=x)  # Un/comment for drawing the 6 shape modes.
 
