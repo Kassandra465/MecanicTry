@@ -17,7 +17,7 @@ I = np.pi * (diametre_exterieur**4 - (diametre_exterieur - 2 * epaisseur_paroi)*
 Jx = 2 * I  # [m**4]
 G = E / (2 * (1 + nu))  # Shear modulus
 
-div = 0  # Number of beams' divisions (=> (div+1) is the number of elements per beam).
+div = 0 # Number of beams' divisions (=> (div+1) is the number of elements per beam).
 
 # Initialisation des listes et matrices
 elemList = []
@@ -61,31 +61,35 @@ main_nodes = np.array([
     [8, 1, 0.5]     # Nœud 33
 ])
 
+if (div > 0):
 #Definir la discretization FEM
-def generate_dividedNodes_coord(node1, node2, div):
-    nodeList_div = []
-    for i in range(1, div + 1):
+    def generate_dividedNodes_coord(node1, node2, div):
+     nodeList_div = []
+     for i in range(1, div + 1):
         frac = i / (div + 1)
         new_x = node1[0] + (node2[0] - node1[0]) * frac
         new_y = node1[1] + (node2[1] - node1[1]) * frac
         new_z = node1[2] + (node2[2] - node1[2]) * frac
         nodeList_div.append([new_x, new_y, new_z])
 
-    return nodeList_div
+     return nodeList_div
 
-def create_nodeList_div(elemList):
-    nodeList_div = []
+    def create_nodeList_div(elemList):
+        nodeList_div = []
 
-    for i in range(len(elemList)):
-        current_elem = elemList[i]
-        start = current_elem[0]
-        end = current_elem[1]
+        for i in range(len(elemList)):
+            current_elem = elemList[i]
+            start = current_elem[0]
+            end = current_elem[1]
 
-        nodeList_tem = generate_dividedNodes_coord(node1 = nodeList[start - 1],
+            nodeList_tem = generate_dividedNodes_coord(node1 = nodeList[start - 1],
                                                    node2 = nodeList[end - 1], div=div)
-        nodeList_div += nodeList_tem
+            nodeList_div += nodeList_tem
 
-    return nodeList_div
+        return nodeList_div
+
+    
+    
 
 # Définir les poutres principales
 main_beams = np.array([
@@ -154,7 +158,8 @@ nodeList.extend(main_nodes)
 
 # Ajouter les poutres principales à la liste des éléments
 elemList.extend(main_beams)
-nodeList = create_nodeList_div(elemList)
+if(div > 0):
+    nodeList = create_nodeList_div(elemList)
 
 nbr_main_nodes = 33  # Number of nodes of the main structure (without any divisions (i.e. 1 element per beam)).
 nbr_final_nodes = nbr_main_nodes + div * len(elemList)  # Total number of nodes for the WHOLE structure.
@@ -179,6 +184,7 @@ nbr_main_dofs = len(main_dofs)
 
 # Ajouter les degrés de liberté pour les nœuds principaux à la liste des degrés de liberté
 dofList.extend(main_dofs)
+
 
 # Fonction pour calculer la matrice de masse élémentaire (Local axis)
 def M_el(rho, A, l):
@@ -224,7 +230,7 @@ def get_locelnode0(node_id):
     return dofList[node_id][:]
 
 def get_locelnode1(node_id):
-    return dofList[node_id - 1][:]
+    return dofList[node_id][:]
 
 def Rotation_fonction (elem_id):
     node_1 = nodeList[elemList[elem_id][0] - 1]  # Node 1 (Structural axis)
@@ -252,10 +258,11 @@ def Rotation_fonction (elem_id):
 
 # This function will generate the Global (For the Whole Structure) Mass matrix (M_s) and Stiffness matrix (K_s).
 def Generate_Ms_Ks(elem_id):
-    total_dof = len(dofList)
+    total_dof = 196
+    
     M_s = np.zeros((total_dof, total_dof))
     K_s = np.zeros((total_dof, total_dof))
-    total_mass = 0  # For computing the total mass of the structure.
+   
 
     # Loop over All the elements of the Whole structure.
     for i in range(len(elemList)):
@@ -276,31 +283,31 @@ def Generate_Ms_Ks(elem_id):
 
         locel_e = get_locel(i)  # locel_e is the locel for the current element.
 
-        # This is used to compute the Total Mass of the Structure, where "u_e" is a full vector of 1 with the same shape of M_el
-        # and it represents the Rigid Body Mode (without any deformation, only translation).
-        u_e = np.array([1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0])
-        total_mass += np.matmul(np.matmul(u_e.transpose(), M_el_), u_e)
+        
 
         # Assembly Process of the elementary K_e_S or M_e_S in the Global K_s or M_s.
         for k in range(0, len(locel_e)):
             for s in range(0, len(locel_e)):
                 kk = locel_e[k] - 1
                 ss = locel_e[s] - 1
-                K_s[kk][ss] += K_e_S[k][s]
-                M_s[kk][ss] += M_e_S[k][s]
+                
+            
+                K_s[kk, ss] += K_e_S[k, s]
+                M_s[kk, ss] += M_e_S[k, s]
+                
 
-    masse_supporters = 51 * 80  # kg
-    total_mass += masse_supporters  # At last place, add the lumped mass to the total mass for the whole structure.
-    print(f'Total MASS = {total_mass} [kg]')
+    
+    
 
     return K_s, M_s
 
 # Function to assemble global matrices
 def assemble_global_matrices():
     nodes_with_mass = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
-    total_dof = len(dofList)
+    total_dof = 196
     M_global1 = np.zeros((total_dof, total_dof))
     K_global1 = np.zeros((total_dof, total_dof))
+    total_mass = 0  # For computing the total mass of the structure.
 
     for elem_id in range(len(elemList)):
 
@@ -325,6 +332,12 @@ def assemble_global_matrices():
         dof_indices = dofList[6 * node: 6 * node + 2]
         for dof in dof_indices:
             M_global1[dof - 1, dof - 1] += 80 * 51 / 18
+    
+    # This is used to compute the Total Mass of the Structure, where "u_e" is a full vector of 1 with the same shape of M_el
+        # and it represents the Rigid Body Mode (without any deformation, only translation).
+    u_e = np.array([1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0])
+    total_mass += np.matmul(np.matmul(u_e.transpose(), M_global1), u_e)
+        
 
     fixed_nodes = [18, 19, 22, 23, 26, 27]  # these nodes are clamped nodes (All their dofs are blocked).
     fixedDof_final = []
@@ -346,9 +359,10 @@ def assemble_global_matrices():
     K_global1 = np.delete(np.delete(K_global1, rows_to_delete, axis=0), columns_to_delete, axis=1)
     M_global1 = np.delete(np.delete(M_global1, rows_to_delete, axis=0), columns_to_delete, axis=1)
 
-    return M_global1, K_global1
+    return M_global1, K_global1, total_mass
 
-
+M, K, mass = assemble_global_matrices()
+print("la masse totale est:", mass)
 ##### Applying the Boundary Conditions (BCs)
 
 
