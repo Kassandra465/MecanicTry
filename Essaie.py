@@ -154,7 +154,7 @@ nodeList.extend(main_nodes)
 
 # Ajouter les poutres principales à la liste des éléments
 elemList.extend(main_beams)
-nodeList = create_nodeList_div(elemList)
+    #nodeList = create_nodeList_div(elemList)
 
 nbr_main_nodes = 33  # Number of nodes of the main structure (without any divisions (i.e. 1 element per beam)).
 nbr_final_nodes = nbr_main_nodes + div * len(elemList)  # Total number of nodes for the WHOLE structure.
