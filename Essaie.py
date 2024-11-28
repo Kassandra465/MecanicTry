@@ -17,7 +17,7 @@ I = np.pi * (diametre_exterieur**4 - (diametre_exterieur - 2 * epaisseur_paroi)*
 Jx = 2 * I  # [m**4]
 G = E / (2 * (1 + nu))  # Shear modulus
 
-div = 0 # Number of beams' divisions (=> (div+1) is the number of elements per beam).
+div = 0  # Number of beams' divisions (=> (div+1) is the number of elements per beam).
 
 # Initialisation des listes et matrices
 elemList = []
@@ -61,35 +61,31 @@ main_nodes = np.array([
     [8, 1, 0.5]     # Nœud 33
 ])
 
-if (div > 0):
 #Definir la discretization FEM
-    def generate_dividedNodes_coord(node1, node2, div):
-     nodeList_div = []
-     for i in range(1, div + 1):
+def generate_dividedNodes_coord(node1, node2, div):
+    nodeList_div = []
+    for i in range(1, div + 1):
         frac = i / (div + 1)
         new_x = node1[0] + (node2[0] - node1[0]) * frac
         new_y = node1[1] + (node2[1] - node1[1]) * frac
         new_z = node1[2] + (node2[2] - node1[2]) * frac
         nodeList_div.append([new_x, new_y, new_z])
 
-     return nodeList_div
+    return nodeList_div
 
-    def create_nodeList_div(elemList):
-        nodeList_div = []
+def create_nodeList_div(elemList):
+    nodeList_div = []
 
-        for i in range(len(elemList)):
-            current_elem = elemList[i]
-            start = current_elem[0]
-            end = current_elem[1]
+    for i in range(len(elemList)):
+        current_elem = elemList[i]
+        start = current_elem[0]
+        end = current_elem[1]
 
-            nodeList_tem = generate_dividedNodes_coord(node1 = nodeList[start - 1],
+        nodeList_tem = generate_dividedNodes_coord(node1 = nodeList[start - 1],
                                                    node2 = nodeList[end - 1], div=div)
-            nodeList_div += nodeList_tem
+        nodeList_div += nodeList_tem
 
-        return nodeList_div
-
-    
-    
+    return nodeList_div
 
 # Définir les poutres principales
 main_beams = np.array([
@@ -158,7 +154,7 @@ nodeList.extend(main_nodes)
 
 # Ajouter les poutres principales à la liste des éléments
 elemList.extend(main_beams)
-if(div > 0):
+if (div >0) :
     nodeList = create_nodeList_div(elemList)
 
 nbr_main_nodes = 33  # Number of nodes of the main structure (without any divisions (i.e. 1 element per beam)).
@@ -184,7 +180,6 @@ nbr_main_dofs = len(main_dofs)
 
 # Ajouter les degrés de liberté pour les nœuds principaux à la liste des degrés de liberté
 dofList.extend(main_dofs)
-
 
 # Fonction pour calculer la matrice de masse élémentaire (Local axis)
 def M_el(rho, A, l):
@@ -221,48 +216,53 @@ def K_el(E, G, Jx, A, l, I):
 
 # Fonction pour obtenir le vecteur de localisation pour un élément
 def get_locel(elem_id):
-    current_elem = elemList[elem_id]
-    start_node = current_elem[0]
-    end_node = current_elem[1]
-    return dofList[start_node - 1][:] + dofList[end_node - 1][:]
+    #current_elem = elemList[elem_id]
+    #start_node = current_elem[0]
+    #end_node = current_elem[1]
+    #return dofList[start_node - 1][:] + dofList[end_node - 1][:]
+
+    locel_final = []
+    for i in range(len(elemList)):
+        current_elem = elemList[i]
+        start_node = current_elem[0]
+        end_node = current_elem[1]
+        tem = dofList[start_node - 1][:] + dofList[end_node - 1][:]
+        locel_final.append(tem)
+
+    return locel_final[elem_id]
 
 def get_locelnode0(node_id):
     return dofList[node_id][:]
 
 def get_locelnode1(node_id):
-    return dofList[node_id][:]
+    return dofList[node_id - 1][:]
 
-def Rotation_fonction (elem_id):
-    node_1 = nodeList[elemList[elem_id][0] - 1]  # Node 1 (Structural axis)
-    node_2 = nodeList[elemList[elem_id][1] - 1]  # Node 2 (Structural axis)
-    node_3 = [-100, -100, -100]  # Not collinear
+def Rotation_fonction (node1, node2):
+    X = [1, 0, 0]
+    Y = [0, 1, 0]
+    Z = [0, 0, 1]
 
-    l = np.linalg.norm(np.array(node_2) - np.array(node_1))
-    ex = np.array([0.0, 0.0, 0.0])
-    for i in range(3):
-        ex[i] = (node_2[i] - node_1[i]) / l
+    node3 = [1, -1, 1]  # Point 3 (arbitrary)
+    # l = np.linalg.norm(np.array(node_2) - np.array(node_1))
+    L = np.sqrt( (node2[0] - node1[0]) ** 2 + (node2[1] - node1[1]) ** 2 + (node2[2] - node1[2]) ** 2)  # Length of the element.
+    e_x = np.array([(node2[0] - node1[0]) / L, (node2[1] - node1[1]) / L, (node2[2] - node1[2]) / L])
 
-    d_2 = np.array([node_2[0] - node_1[0], node_2[1] - node_1[1], node_2[2] - node_1[2]])
-    d_3 = np.array([node_3[0] - node_1[0], node_3[1] - node_1[1], node_3[2] - node_1[2]])
+    d_2 = np.array([(node2[0] - node1[0]), (node2[1] - node1[1]), (node2[2] - node1[2])])
+    d_3 = np.array([(node3[0] - node1[0]), (node3[1] - node1[1]), (node3[2] - node1[2])])
+    produit_vec = np.cross(d_3, d_2)
+    e_y = produit_vec / (np.linalg.norm(produit_vec))
+    e_z = np.cross(e_x, e_y)
 
-    cross_product = np.cross(d_3, d_2)
-    ey = cross_product / np.linalg.norm(cross_product)
-    ez = np.cross(ey, ex)
-
-    R = np.array([
-        [ex[0], ex[1], ex[2]],
-        [ey[0], ey[1], ey[2]],
-        [ez[0], ez[1], ez[2]]
-    ])
+    R = np.array([[np.dot(X, e_x), np.dot(Y, e_x), np.dot(Z, e_x)],
+                    [np.dot(X, e_y), np.dot(Y, e_y), np.dot(Z, e_y)],
+                    [np.dot(X, e_z), np.dot(Y, e_z), np.dot(Z, e_z)]])
     return R
 
 # This function will generate the Global (For the Whole Structure) Mass matrix (M_s) and Stiffness matrix (K_s).
-def Generate_Ms_Ks(elem_id):
-    total_dof = 196
-    
-    M_s = np.zeros((total_dof, total_dof))
-    K_s = np.zeros((total_dof, total_dof))
-   
+def Generate_Ms_Ks():
+    M_s = np.zeros((nbr_dof, nbr_dof))
+    K_s = np.zeros((nbr_dof, nbr_dof))
+    total_mass = 0  # For computing the total mass of the structure.
 
     # Loop over All the elements of the Whole structure.
     for i in range(len(elemList)):
@@ -275,43 +275,40 @@ def Generate_Ms_Ks(elem_id):
         M_el_ = M_el(rho, A, l)
         K_el_ = K_el(E, G, Jx, A, l, I)
 
-        R = Rotation_fonction(elem_id)
+        R = Rotation_fonction(node1, node2)
         T = block_diag(R, R, R, R)
 
         M_e_S = T.T @ M_el_ @ T
         K_e_S = T.T @ K_el_ @ T
 
-        locel_e = get_locel(i)  # locel_e is the locel for the current element.
+        locel_e = get_locel(i)
+        #locel_e = locel[i]  # locel_e is the locel for the current element.
 
-        
+        # This is used to compute the Total Mass of the Structure, where "u_e" is a full vector of 1 with the same shape of M_el
+        # and it represents the Rigid Body Mode (without any deformation, only translation).
+        u_e = np.array([1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0])
+        total_mass += np.matmul(np.matmul(u_e.transpose(), M_el_), u_e)
 
         # Assembly Process of the elementary K_e_S or M_e_S in the Global K_s or M_s.
         for k in range(0, len(locel_e)):
             for s in range(0, len(locel_e)):
                 kk = locel_e[k] - 1
                 ss = locel_e[s] - 1
-                
-            
-                K_s[kk, ss] += K_e_S[k, s]
-                M_s[kk, ss] += M_e_S[k, s]
-                
-
-    
-    
+                K_s[kk][ss] += K_e_S[k][s]
+                M_s[kk][ss] += M_e_S[k][s]
 
     return K_s, M_s
+
+K_s, M_s = Generate_Ms_Ks()
 
 # Function to assemble global matrices
 def assemble_global_matrices():
     nodes_with_mass = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
-    total_dof = 196
+    total_dof = len(dofList)
     M_global1 = np.zeros((total_dof, total_dof))
     K_global1 = np.zeros((total_dof, total_dof))
-    total_mass = 0  # For computing the total mass of the structure.
 
     for elem_id in range(len(elemList)):
-
-        K_s, M_s = Generate_Ms_Ks(elem_id)
 
         locel = get_locel(elem_id)
 
@@ -332,12 +329,6 @@ def assemble_global_matrices():
         dof_indices = dofList[6 * node: 6 * node + 2]
         for dof in dof_indices:
             M_global1[dof - 1, dof - 1] += 80 * 51 / 18
-    
-    # This is used to compute the Total Mass of the Structure, where "u_e" is a full vector of 1 with the same shape of M_el
-        # and it represents the Rigid Body Mode (without any deformation, only translation).
-    u_e = np.array([1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0])
-    total_mass += np.matmul(np.matmul(u_e.transpose(), M_global1), u_e)
-        
 
     fixed_nodes = [18, 19, 22, 23, 26, 27]  # these nodes are clamped nodes (All their dofs are blocked).
     fixedDof_final = []
@@ -359,10 +350,12 @@ def assemble_global_matrices():
     K_global1 = np.delete(np.delete(K_global1, rows_to_delete, axis=0), columns_to_delete, axis=1)
     M_global1 = np.delete(np.delete(M_global1, rows_to_delete, axis=0), columns_to_delete, axis=1)
 
-    return M_global1, K_global1, total_mass
+    #masse_supporters = 51 * 80  # kg
+    #total_mass += masse_supporters  # At last place, add the lumped mass to the total mass for the whole structure.
 
-M, K, mass = assemble_global_matrices()
-print("la masse totale est:", mass)
+    return M_global1, K_global1
+
+
 ##### Applying the Boundary Conditions (BCs)
 
 
@@ -374,7 +367,7 @@ def extract_frequencies(K_global, M_global):
 
 # Fonction pour effectuer l'étude de convergence
 def convergence_study():
-    num_elements_per_beam = div
+    num_elements_per_beam = div +1
     convergence_results = []
 
     for num_elem in num_elements_per_beam:
@@ -474,13 +467,16 @@ def draw_EigenModes(x):
             new_nodes_coords.append([new_x, new_y, new_z])
 
         # Draw each mode.
-        Draw_Structure(new_nodes_coords=new_nodes_coords, mode=mode)
+        Draw_Structure(new_nodes_coords, mode)
 
 #==================#
 #       Main       #
 #==================#
-M_global, K_global = assemble_global_matrices()  # Assemblage des matrices globales
+#M_global, K_global = assemble_global_matrices()  # Assemblage des matrices globales
+M_global = M_s
+K_global = K_s
 K_global1, M_global1, w, x = Calcul_Eig(M_global, K_global)
+#print(f'Total MASS = {total_mass} [kg]')
 
 frequencies, eigenvectors = extract_frequencies(K_global, M_global)  # Extraction des fréquences naturelles et des modes associés
 draw_EigenModes(x=x)  # Un/comment for drawing the 6 shape modes.
