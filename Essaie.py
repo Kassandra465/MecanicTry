@@ -26,7 +26,7 @@ elemList = []
 dofList = []
 nodeList = []
 
-# Définir les nœuds principaux et leurs coordonnées (Structural axis)
+# Définir les noeuds principaux et leurs coordonnées (Structural axis)
 main_nodes = np.array([
     [0, 0, 5],      # Nœud 1
     [0, 2, 5],      # Nœud 2
@@ -151,7 +151,7 @@ main_beams = np.array([
 
 ])
 
-# Ajouter les nœuds principaux à la liste des nœuds
+# Ajouter les noeuds principaux à la liste des nœuds
 nodeList.extend(main_nodes)
 
 # Ajouter les poutres principales à la liste des éléments
@@ -233,12 +233,6 @@ def get_locel(elem_id):
 
     return locel_final[elem_id]
 
-def get_locelnode0(node_id):
-    return dofList[node_id][:]
-
-def get_locelnode1(node_id):
-    return dofList[node_id - 1][:]
-
 def Rotation_fonction (node1, node2):
     X = [1, 0, 0]
     Y = [0, 1, 0]
@@ -288,8 +282,7 @@ def Generate_Ms_Ks():
 
         # This is used to compute the Total Mass of the Structure, where "u_e" is a full vector of 1 with the same shape of M_el
         # and it represents the Rigid Body Mode (without any deformation, only translation).
-        u_e = np.array([1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0])
-        total_mass += np.matmul(np.matmul(u_e.transpose(), M_el_), u_e)
+        
 
         # Assembly Process of the elementary K_e_S or M_e_S in the Global K_s or M_s.
         for k in range(0, len(locel_e)):
@@ -321,13 +314,32 @@ def assemble_global_matrices():
         for i in range(3):
              dof_indices.append(dofList[node][i])
         for dof in dof_indices:
-            M_global1[dof - 1, dof - 1] += 80 * 51 / 18
+            M_global1[dof - 1, dof - 1] += (80 * 51 / 18)
 
     total_mass = 0
-    u_e = np.array([1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0])
-    total_mass += np.matmul(np.matmul(u_e.transpose(), M_global1), u_e)
-    print(f'Total MASS = {total_mass} [kg]')
+    # Création du vecteur de déplacement unitaire u_e
+    u_e = np.zeros(nbr_dof)
+    for i in range(0, nbr_dof, 6):
+        u_e[i] = 1  # Déplacement unitaire en x
+        u_e[i + 1] = 1  # Déplacement unitaire en y
+        u_e[i + 2] = 1  # Déplacement unitaire en z
 
+    # Vérification que Ke * u_e = 0
+    Ks_u_e = np.matmul(K_s, u_e)
+    print(f'K_e * u_e = {Ks_u_e}')
+
+    # Calcul de la masse totale
+    total_mass += np.matmul(np.matmul(u_e.transpose(), M_global1), u_e)
+
+    print(f'Total MASS = {total_mass} [kg]')
+    #u_e = np.zeros(nbr_dof)
+    #u_e[0] = 1
+    #for i in range(nbr_dof-10):
+        #u_e[i + 6] = 1
+    #total_mass += np.matmul(np.matmul(u_e.transpose(), M_global1), u_e)
+    #print(f'Total MASS = {total_mass} [kg]')
+
+    ##### Applying the Boundary Conditions (BCs)
     # Apply the Fixed BCs.
     fixed_nodes = [18, 19, 22, 23, 26, 27]  # these nodes are clamped nodes (All their dofs are blocked).
     fixedDof_final = []
@@ -346,10 +358,6 @@ def assemble_global_matrices():
     M_global1 = np.delete(np.delete(M_global1, rows_to_delete, axis=0), columns_to_delete, axis=1)
 
     return M_global1, K_global1
-
-
-##### Applying the Boundary Conditions (BCs)
-
 
 # Fonction pour extraire les fréquences naturelles et les modes associés
 def extract_frequencies(K_global, M_global):
@@ -387,44 +395,6 @@ def plot_convergence_study(element_counts, frequencies):
     plt.grid()
     plt.show()
 
-#       Draw Points Fct      #
-
-def Draw_Structure(main_dofs, mode):
-    # Define the 3D points.
-    points2 = main_dofs
-    # Define the connections between points.
-    connections_structure = elemList
-    # Extract x, y, and z coordinates.
-    x2, y2, z2 = zip(*points2)
-
-    # Create a 3D figure.
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-
-    # Plot the points.
-    ax.scatter(x2, y2, z2, s=3, c='k', label='Points')
-
-    # Plot the connections.
-    for connection in connections_structure:
-        point2_1 = points2[connection[0] - 1]
-        point2_2 = points2[connection[1] - 1]
-        ax.plot([point2_1[0], point2_2[0]], [point2_1[1], point2_2[1]], [point2_1[2], point2_2[2]], 'b-')
-
-    # Set axes.
-    ax.set_xlabel('X [m]')
-    ax.set_ylabel('Y [m]')
-    ax.set_zlabel('Z [m]')
-    ax.set_xlim(-1, 8.5)
-    ax.set_ylim(-1, 8.5)
-    ax.set_zlim(0, 6)
-    ax.set_box_aspect([1, 1, 2])  # Stretch the z-axis by a factor of 2
-
-    ax.set_title(f'Mode {mode}')
-    ax.invert_xaxis()
-    plt.show()
-
-#        Calcul Eig + shape
-
 def Calcul_Eig(M_global1, K_global1, draw=True):
     # Calcul Eigen values and vectors (Shapes).
     w_carre, eigenModes = linalg.eig(K_global1, M_global1)
@@ -438,40 +408,104 @@ def Calcul_Eig(M_global1, K_global1, draw=True):
 
     sorted_eigenModes = eigenModes[:, sorted_indices]  # Rearrange columns of eigenModes based on sorted indices.
 
-    print(f'\n##################### sorted Eigen/Normal Frequencies (div = {div}): #####################')
+    print(f'\n################### sorted Eigen/Normal Frequencies (div = {div}): #####################')
     print(sorted_eigenFreq[:6].real)
 
     return M_global1, K_global1, sorted_eigenFreq, sorted_eigenModes
 
-def draw_EigenModes(x):
-    nbr_modes = 6  # number of normal modes to draw (deformed structure).
-    for mode in range(1, nbr_modes + 1):
-        new_nodes_coords = []
+#Draw Points Fct
+#       Draw Points Fct
+def plot_mode_shape(nodes, elements, mode_vector, mode_number, frequency, scale_factor=3.0):
+    """Plot the mode shape for a given mode number"""
+    degress_of_freedom = 6
+    fig = plt.figure(figsize=(12, 8))
+    ax = fig.add_subplot(111, projection='3d')
 
-        for i in range(0, int(len(x[0]) / 6)):
-            current_eigenMode = x[:, mode - 1]
-            current_dofs = current_eigenMode[i * 6: (i * 6) + 6]
-            coord_xyz = current_dofs[:3]
-            mul = 10  # is the multiplication factor (amplification) to see *better* the normal modes with the graphs.
-            new_x = mul * coord_xyz[0].real + nodeList[i][0]
-            new_y = mul * coord_xyz[1].real + nodeList[i][1]
-            new_z = mul * coord_xyz[2].real + nodeList[i][2]
-            new_nodes_coords.append([new_x, new_y, new_z])
+    # Get original and deformed node coordinates
+    original_coords = nodes  # Skip node ID
 
-        # Draw each mode.
-        Draw_Structure(new_nodes_coords, mode)
+    full_mode_vector = np.zeros((len(nodes), degress_of_freedom))
+    free_dof_idx = 0
+    fixed_nodes = [18, 19, 22, 23, 26, 27]
+    fixed_dofs = []
+    fixed_dofs = [degress_of_freedom * (node - 1) + i for node in fixed_nodes for i in range(degress_of_freedom)]
+
+    for i in range(len(full_mode_vector)):
+        if i not in fixed_dofs:
+            full_mode_vector[i] = mode_vector[free_dof_idx]
+            free_dof_idx += 1
+
+    # Extract translational components
+    deformed_coords = original_coords + scale_factor * full_mode_vector[:,:3]
+
+    # Plot original structure (gray)
+    for elem in elements:
+        node1_idx = elem[0] - 1
+        node2_idx = elem[1] - 1
+        x = [original_coords[node1_idx, 0], original_coords[node2_idx, 0]]
+        y = [original_coords[node1_idx, 1], original_coords[node2_idx, 1]]
+        z = [original_coords[node1_idx, 2], original_coords[node2_idx, 2]]
+        ax.plot(x, y, z, 'black', alpha=0.9, linewidth=1.5)
+
+    # Plot deformed structure (blue)
+    for elem in elements:
+        node1_idx = elem[0] - 1
+        node2_idx = elem[1] - 1
+        x = [deformed_coords[node1_idx, 0], deformed_coords[node2_idx, 0]]
+        y = [deformed_coords[node1_idx, 1], deformed_coords[node2_idx, 1]]
+        z = [deformed_coords[node1_idx, 2], deformed_coords[node2_idx, 2]]
+        ax.plot(x, y, z, 'b', linewidth=2)
+
+    # Plot nodes
+    ax.scatter(original_coords[:, 0], original_coords[:, 1], original_coords[:, 2],
+               c='gray', alpha=0.3, s=30)
+    ax.scatter(deformed_coords[:, 0], deformed_coords[:, 1], deformed_coords[:, 2],
+               c='blue', s=30)
+
+    # Highlight fixed nodes
+    fixed_nodes_coords = original_coords[nodes[:, 2] == 0]
+    ax.scatter(fixed_nodes_coords[:, 0], fixed_nodes_coords[:, 1], fixed_nodes_coords[:, 2],
+               c='red', s=100, marker='s', label='Fixed supports')
+
+    # Set labels and title
+    ax.set_xlabel('X [m]')
+    ax.set_ylabel('Y [m]')
+    ax.set_zlabel('Z [m]')
+    ax.set_title(f'Mode {mode_number + 1}: {frequency:.2f} Hz')
+
+    # Add legend
+    ax.legend(['Original structure', 'Deformed shape', 'Nodes', 'Fixed supports'])
+
+    # Set equal aspect ratio
+    ax.set_box_aspect([np.ptp(original_coords[:, 0]),
+                       np.ptp(original_coords[:, 1]),
+                       np.ptp(original_coords[:, 2])])
+    plt.tight_layout()
+    return fig
+
 
 #==================#
 #       Main       #
 #==================#
 M_global, K_global = assemble_global_matrices()  # Assemblage des matrices globale
-#M_global = M_s
-#K_global = K_s
 K_global1, M_global1, w, x = Calcul_Eig(M_global, K_global)
-#print(f'Total MASS = {total_mass} [kg]')
+mode_number = 6
 
-frequencies, eigenvectors = extract_frequencies(K_global, M_global)  # Extraction des fréquences naturelles et des modes associés
-draw_EigenModes(x=x)  # Un/comment for drawing the 6 shape modes.
+# Extraction des fréquences naturelles et des modes associés
+frequencies, eigenvectors = extract_frequencies(K_global, M_global)
+
+# Appel de la fonction plot_mode_shape pour chaque mode
+for mode_number in range(6):
+    print(f"Matrix shapes: eigenvectors.shape = {eigenvectors.shape}, frequencies.shape = {frequencies.shape}, elements.shape = {np.array(elemList).shape}, nodes.shape = {np.array(nodeList).shape}")
+    for mode_number in range(6):
+        mode_vector = eigenvectors[:, mode_number]
+        frequency = frequencies[mode_number]
+        fig = plot_mode_shape(nodes=np.array(nodeList), \
+                              elements=np.array(elemList), \
+                              mode_vector=mode_vector, \
+                              mode_number=mode_number, \
+                              frequency=frequency)
+    plt.show()
 
 # Affichage des six premières fréquences naturelles
 print("Six premières fréquences naturelles :")
