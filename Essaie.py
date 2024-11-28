@@ -1,3 +1,5 @@
+from operator import index
+
 import numpy as np
 import matplotlib.pyplot as plt
 import math
@@ -299,37 +301,34 @@ def Generate_Ms_Ks():
 
     return K_s, M_s
 
-K_s, M_s = Generate_Ms_Ks()
+#K_s, M_s = Generate_Ms_Ks()
 
 # Function to assemble global matrices
 def assemble_global_matrices():
     nodes_with_mass = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
-    total_dof = len(dofList)
-    M_global1 = np.zeros((total_dof, total_dof))
-    K_global1 = np.zeros((total_dof, total_dof))
+    K_s, M_s = Generate_Ms_Ks()
+    M_global1 = M_s
+    K_global1 = K_s
 
-    for elem_id in range(len(elemList)):
-
-        locel = get_locel(elem_id)
-
-        for i in range(12):
-            for j in range(12):
-                if locel[i] > 0 and locel[j] > 0:
-                    M_global1[locel[i] - 1, locel[j] - 1] += M_s[i, j]
-                    K_global1[locel[i] - 1, locel[j] - 1] += K_s[i, j]
-
-    loc = []
-
-    locels = np.array(
-        [get_locelnode1(18), get_locelnode0(19), get_locelnode0(22), get_locelnode0(23), get_locelnode1(26),
-         get_locelnode1(27)])
-
-    loc.extend(locels.flatten())
+   #Add mass
     for node in nodes_with_mass:
-        dof_indices = dofList[6 * node: 6 * node + 2]
+        #dof_indices = dofList[6 * node: 6 * node + 2]
+        # for i in range(1, len(dof_indices)):
+            # previous_dof = dof_indices[i - 1]
+            # current_dof = dof_indices[i]
+            #M_global1[dof_indices, dof_indices] += 80 * 51 / 18
+        dof_indices = []
+        for i in range(3):
+             dof_indices.append(dofList[node][i])
         for dof in dof_indices:
             M_global1[dof - 1, dof - 1] += 80 * 51 / 18
 
+    total_mass = 0
+    u_e = np.array([1, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0])
+    total_mass += np.matmul(np.matmul(u_e.transpose(), M_global1), u_e)
+    print(f'Total MASS = {total_mass} [kg]')
+
+    # Apply the Fixed BCs.
     fixed_nodes = [18, 19, 22, 23, 26, 27]  # these nodes are clamped nodes (All their dofs are blocked).
     fixedDof_final = []
 
@@ -339,19 +338,12 @@ def assemble_global_matrices():
         tem = dofList[current_node - 1][:]
         fixedDof_final += tem
 
-    return fixedDof_final
-
-    # Apply the Fixed BCs.
-    fixed_dof = create_fixedDof()
-
-    rows_to_delete = fixed_dof
-    columns_to_delete = fixed_dof
+    # Delete fixed nodes rows and columns
+    rows_to_delete = fixedDof_final
+    columns_to_delete = fixedDof_final
     # Deleting the specified rows and columns of the K_s and M_s.
     K_global1 = np.delete(np.delete(K_global1, rows_to_delete, axis=0), columns_to_delete, axis=1)
     M_global1 = np.delete(np.delete(M_global1, rows_to_delete, axis=0), columns_to_delete, axis=1)
-
-    #masse_supporters = 51 * 80  # kg
-    #total_mass += masse_supporters  # At last place, add the lumped mass to the total mass for the whole structure.
 
     return M_global1, K_global1
 
@@ -472,9 +464,9 @@ def draw_EigenModes(x):
 #==================#
 #       Main       #
 #==================#
-#M_global, K_global = assemble_global_matrices()  # Assemblage des matrices globales
-M_global = M_s
-K_global = K_s
+M_global, K_global = assemble_global_matrices()  # Assemblage des matrices globale
+#M_global = M_s
+#K_global = K_s
 K_global1, M_global1, w, x = Calcul_Eig(M_global, K_global)
 #print(f'Total MASS = {total_mass} [kg]')
 
