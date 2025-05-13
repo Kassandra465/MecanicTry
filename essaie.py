@@ -1,5 +1,6 @@
-import python as py
+#import python as py
 import matplotlib.pyplot as plt
+import pandas as pd
 
 # Load the Excel file
 df = pd.read_excel("Cinematique_data.xlsx")  # adjust path
