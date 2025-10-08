@@ -67,9 +67,6 @@ def define_element_sections(main_beams):
     return elem_section_dict
 
 
-elem_section_dict = define_element_sections(main_beams)
-
-
 # ==========================
 # Division en elements per beam
 # ==========================
@@ -299,11 +296,34 @@ def assemble_global_matrices(K_s, M_s, dofList):
 # ==========================
 # Extraction fréquences propres
 # ==========================
-def extract_frequencies(K,M,n_modes=6):
-    vals, vecs = eigh(K,M)
-    freqs = np.sqrt(np.abs(vals))/(2*np.pi)
-    idx = np.argsort(freqs)
-    return freqs[idx][:n_modes], vecs[:,idx][:,:n_modes]
+def extract_modes(K_reduced, M_reduced, n_modes=6):
+    # --- Sécurité : symétrisation numérique ---
+    K_reduced = 0.5 * (K_reduced + K_reduced.T)
+    M_reduced = 0.5 * (M_reduced + M_reduced.T)
+
+    # --- Résolution du problème généralisé ---
+    eigvals, eigvecs = eigh(K_reduced, M_reduced)
+
+    # --- Nettoyage des valeurs propres négatives (artefacts numériques) ---
+    eigvals = np.real(eigvals)
+    eigvals[eigvals < 0] = 0.0
+
+    # --- Tri croissant des fréquences ---
+    idx = np.argsort(eigvals)
+    eigvals = eigvals[idx]
+    eigvecs = eigvecs[:, idx]
+
+    # --- Conversion en fréquences [Hz] ---
+    frequencies = np.sqrt(eigvals) / (2 * np.pi)
+
+    # --- Normalisation des modes ---
+    for i in range(eigvecs.shape[1]):
+        mode = eigvecs[:, i]
+        norm = np.sqrt(np.dot(mode.T, M_reduced @ mode))
+        eigvecs[:, i] = mode / norm if norm > 0 else mode
+
+    return frequencies[:n_modes], eigvecs[:, :n_modes]
+
 
 # Fonction pour effectuer l'étude de convergence
 def convergence_study():
@@ -316,7 +336,7 @@ def convergence_study():
         M_global, K_global = assemble_global_matrices()
 
         # Extraction des fréquences naturelles et des modes associés
-        frequencies, eigenvectors = extract_frequencies(K_global, M_global)
+        frequencies, eigenvectors = extract_modes(K_global, M_global)
 
         # Stockage des résultats
         convergence_results.append((num_elem, frequencies[:6]))
@@ -345,25 +365,11 @@ def Calcul_Eig(M_global1, K_global1, draw=True):
 #==================#
 #       Main       #
 #==================#
-M_global, K_global = assemble_global_matrices()  # Assemblage des matrices globale
-K_global1, M_global1, w, x = Calcul_Eig(M_global, K_global)
-
-freqencie, modes = extract_frequencies(asm["K_red"], asm["M_red"], n_modes=6)
-print("Premières fréquences [Hz] :", freqs)
-for i,f in enumerate(freqs,1):
+freqencies, modes = extract_modes(["K_red"],["M_red"], n_modes=6)
+print("Premières fréquences [Hz] :", freqencies)
+for i,f in enumerate(freqencies,1):
     print(f"  Mode {i} : {f:.4f} Hz")
 
-results = convergence_study_and_plot(div_values=[0,1,2,3],
-                                     main_nodes=main_nodes,
-                                     main_beams=main_beams,
-                                     A_frame=A_frame, Iy_f=Iy_f, Iz_f=Iz_f, Jx_f=Jx_f,
-                                     A_supp=A_supp, Iy_s=Iy_s, Iz_s=Iz_s, Jx_s=Jx_s,
-                                     fixed_nodes=fixed_nodes,
-                                     nodes_with_mass=nodes_with_mass,
-                                     roof_mass=roof_mass,
-                                     E=E, G=G, rho=rho,
-                                     elem_section_type=elem_section_type,
-                                     n_modes=6, show_plot=True)
 
 # Fonction pour tracer l'étude de convergence
 def plot_convergence_study(element_counts, frequencies):
@@ -390,7 +396,6 @@ def plot_mode_shape(nodes, elements, mode_vector, mode_number, frequency, scale_
     full_mode_vector = np.zeros((len(nodes), degress_of_freedom))
     free_dof_idx = 0
     fixed_nodes = [5, 10, 16, 21]
-    fixed_dofs = []
     fixed_dofs = [degress_of_freedom * (node) + i for node in fixed_nodes for i in range(degress_of_freedom)]
 
     for i in range(len(full_mode_vector)):
@@ -490,7 +495,7 @@ print("eigs", eigenvectors)
 
 # Tracer la courbe de convergence
 plt.figure(figsize=(8, 6))
-plt.plot(divisions, frequencie, marker='o', linestyle='-', label="Fréquence 1")
+plt.plot(divisions, frequencies, marker='o', linestyle='-', label="Fréquence 1")
 plt.xlabel("Nombre de divisions (éléments finis)")
 plt.ylabel("Fréquence (Hz)")
 plt.title("Convergence des fréquences en fonction des divisions")
@@ -500,43 +505,17 @@ plt.show()
 
 
 
-
-
-# === 8. Visualisation des modes ==================================
-def plot_mode_shape(nodes, beams, mode_vector, frequency, fixed_nodes, scale=5.0):
-    """Trace le mode déformé en 3D"""
-
-# === 9. Étude de convergence ======================================
-def convergence_study(main_nodes, main_beams, div_list, material_dict, section_dict,
-                      elem_section_type, fixed_nodes, nodes_with_mass):
-    """
-    Boucle sur différentes valeurs de 'div' :
-    - Génère le maillage
-    - Assemble K et M
-    - Calcule les 6 premières fréquences
-    - Stocke les résultats et trace les courbes de convergence
-    """
-    return results
-
-# === 10. Main program =============================================
 def main():
     # Étape 1 – Charger géométrie et matériau
-    material_dict, section_dict = define_material_and_sections()
-    main_nodes, main_beams, fixed_nodes, nodes_with_mass, elem_section_type = define_structure_geometry()
-
-    # Étape 2 – Étude de convergence
     div_values = [0, 1, 2, 3, 4]
-    results = convergence_study(main_nodes, main_beams, div_values,
-                                material_dict, section_dict, elem_section_type,
-                                fixed_nodes, nodes_with_mass)
+    dofList = create_dof_list(n_nodes: int)
+    elem_section_type = define_element_sections(main_beams)
+    new_nodes_array, new_beams_array, new_section_type = subdivide_mesh(main_nodes, main_beams, div_values, elem_section_type)
+    K_global, M_global = assemble_matrices(new_nodes_array, new_beams_array, new_section_type, E, G, rho)
+    M_ass, K_ass = assemble_global_matrices(K_global, M_global, dofList)
+    frequencies[:n_modes], eigvecs[:, :n_modes] = extract_modes(M_ass, K_ass, n_modes=6)
+    K_global1, M_global1, w, x = Calcul_Eig(M_global, K_global)
 
-    # Étape 3 – Afficher les premières fréquences
-    for div, res in results.items():
-        print(f"\nDivisions {div}: {res['frequencies'][:6]} Hz")
-
-    # Étape 4 – Tracer un mode
-    plot_mode_shape(res["nodes"], res["beams"], res["modes"][:, 0], res["frequencies"][0],
-                    fixed_nodes, scale=5)
 
 if __name__ == "__main__":
     main()
