@@ -146,25 +146,6 @@ def subdivide_mesh(main_nodes, main_beams, div, elem_section_type):
 
     return new_nodes_array, new_beams_array, new_section_type
 
-"""
-def section(D, t):
-    Retourne A, Iy, Iz, Jx pour un tube circulaire creux
-    Di = D - 2*t
-    A = np.pi * (D**2 - Di**2) / 4.0
-    Iy = np.pi * (D**4 - Di**4) / 64.0
-    Iz = Iy
-    Jx = 2*Iy
-    return A, Iy, Iz, Jx
-
-nbr_elem = 47 * (div + 1)
-
-for i in range (nbr_elem) :
-    if i < (22 * (div +1)) :
-    A_f, Iy_f, Iz_f, Jx_f = section(0.120, 0.005) # Cadres rouges
-else :
-    A_s, Iy_s, Iz_s, Jx_s = section(0.070, 0.003) # Poutres bleues
-"""
-
 # ==========================
 # DoFs
 # ==========================
@@ -181,23 +162,28 @@ def create_dof_list(n_nodes: int):
 # ==========================
 # Matrice de rotation
 # ==========================
-
 def Rotation_fonction(node1, node2):
-    x_axis = (node2 - node1)
+    x_axis = node2 - node1
     L = np.linalg.norm(x_axis)
+    if L < 1e-9:
+        raise ValueError("Longueur d'élément nulle")
     ex = x_axis / L
-    # Choix d’un vecteur arbitraire non colinéaire
-    arbitrary = np.array([0,0,1]) if abs(ex[2])<0.9 else np.array([0,1,0])
-    ey = np.cross(arbitrary, ex); ey /= np.linalg.norm(ey)
+    arbitrary = np.array([0, 0, 1.0]) if abs(ex[2]) < 0.99 else np.array([0, 1.0, 0])
+    ey = np.cross(arbitrary, ex)
+    ey /= np.linalg.norm(ey)
     ez = np.cross(ex, ey)
-    return np.vstack((ex,ey,ez))
+    R = np.vstack((ex, ey, ez))
+    # Correction : orthonormalisation finale
+    U, _, Vt = np.linalg.svd(R)
+    R = U @ Vt
+    return R
 
 # ==========================
 # Matrices élémentaires
 # ==========================
 def K_el(E, G, A, l, Iy, Iz, Jx):
     return np.array([
-        [ E*A/l, 0, 0, 0,0, 0, -E*A/l, 0, 0, 0, 0, 0],
+        [ E*A/l, 0, 0, 0, 0, 0, -E*A/l, 0, 0, 0, 0, 0],
         [0, 12*E*Iz/l**3, 0, 0, 0, 6*E*Iz/l**2, 0, -12*E*Iz/l**3, 0, 0, 0, 6*E*Iz/l**2],
         [0, 0, 12*E*Iy/l**3, 0, -6*E*Iy/l**2, 0, 0, 0, -12*E*Iy/l**3, 0, -6*E*Iy/l**2, 0],
         [0, 0, 0, G*Jx/l, 0, 0, 0, 0, 0, -G*Jx/l, 0, 0],
@@ -263,8 +249,8 @@ def assemble_matrices(new_nodes_array, beams, elem_section_dict, E, G, rho):
         loc = dof_list[n1] + dof_list[n2]   # 12 indices
         for i_loc in range(12):
             for j_loc in range(12):
-                K_global[loc[i_loc], j_loc] += Ke_g[i_loc, j_loc]
-                M_global[loc[i_loc], j_loc] += Me_g[i_loc, j_loc]
+                K_global[loc[i_loc], loc[j_loc]] += Ke_g[i_loc, j_loc]
+                M_global[loc[i_loc], loc[j_loc]] += Me_g[i_loc, j_loc]
 
     return K_global, M_global
 
@@ -274,9 +260,9 @@ def assemble_matrices(new_nodes_array, beams, elem_section_dict, E, G, rho):
 
 def assemble_global_matrices(K_s, M_s, dofList):
     nodes_with_mass = [5, 6, 7, 8, 16, 17, 18, 19] # masses du toit
-    roof_mass = 500.0 / len(nodes_with_mass)
-    M_global = M_s
-    K_global = K_s
+    roof_mass = 500.0 / 8
+    M_global = M_s.copy()
+    K_global = K_s.copy()
 
     # --- Ajout des masses concentrées sur les DDL de translation ---
     for nd in nodes_with_mass:
@@ -297,224 +283,210 @@ def assemble_global_matrices(K_s, M_s, dofList):
 # Extraction fréquences propres
 # ==========================
 def extract_modes(K_reduced, M_reduced, n_modes=6):
-    # --- Sécurité : symétrisation numérique ---
-    K_reduced = 0.5 * (K_reduced + K_reduced.T)
-    M_reduced = 0.5 * (M_reduced + M_reduced.T)
+    #Correction numérique
+    #K_reduced = 0.5 * (K_reduced + K_reduced.T)
+    #M_reduced = 0.5 * (M_reduced + M_reduced.T)
+    # --- Vérification ---
+    if np.any(np.isnan(K_reduced)) or np.any(np.isnan(M_reduced)):
+        raise ValueError("Matrices K ou M contiennent des NaN (élément mal défini).")
+    if np.any(np.linalg.eigvals(M_reduced) <= 0):
+        raise ValueError(
+            "La matrice de masse M n’est pas positive définie ! Vérifie les sections ou les masses ajoutées.")
 
-    # --- Résolution du problème généralisé ---
+    # Résolution
     eigvals, eigvecs = eigh(K_reduced, M_reduced)
-
-    # --- Nettoyage des valeurs propres négatives (artefacts numériques) ---
+    # Valeurs
     eigvals = np.real(eigvals)
     eigvals[eigvals < 0] = 0.0
-
-    # --- Tri croissant des fréquences ---
+    # Tri
     idx = np.argsort(eigvals)
-    eigvals = eigvals[idx]
-    eigvecs = eigvecs[:, idx]
+    eigvals, eigvecs = eigvals[idx], eigvecs[:, idx]
 
-    # --- Conversion en fréquences [Hz] ---
+    # Conversion en fréquences (Hz)
     frequencies = np.sqrt(eigvals) / (2 * np.pi)
 
-    # --- Normalisation des modes ---
+    # Normalisation modale
     for i in range(eigvecs.shape[1]):
         mode = eigvecs[:, i]
-        norm = np.sqrt(np.dot(mode.T, M_reduced @ mode))
-        eigvecs[:, i] = mode / norm if norm > 0 else mode
+        norm = np.sqrt(mode.T @ M_reduced @ mode)
+        if norm > 0:
+            eigvecs[:, i] = mode / norm
 
     return frequencies[:n_modes], eigvecs[:, :n_modes]
 
 
 # Fonction pour effectuer l'étude de convergence
-def convergence_study():
-    num_elements_per_beam = div + 1
+def convergence_study(main_beams, main_nodes, E, G, rho):
+    div_values = [0, 1, 2, 3, 4, 5]
+    elem_section_type = define_element_sections(main_beams)
     convergence_results = []
 
-    for num_elem in range(num_elements_per_beam):
+    for i in div_values:
+        # Assemblage
+        new_nodes_array, new_beams_array, new_section_type = subdivide_mesh(
+            main_nodes, main_beams, i, elem_section_type)
+        dofList = create_dof_list(len(new_nodes_array))
+        M_global, K_global = assemble_matrices(new_nodes_array, new_beams_array,
+                                               new_section_type, E, G, rho)
+        M_ass, K_ass = assemble_global_matrices(M_global, K_global, dofList)
 
-        # Assemblage des matrices globales
-        M_global, K_global = assemble_global_matrices()
+        # Extraction
+        frequencies, _ = extract_modes(K_ass, M_ass)
 
-        # Extraction des fréquences naturelles et des modes associés
-        frequencies, eigenvectors = extract_modes(K_global, M_global)
-
-        # Stockage des résultats
-        convergence_results.append((num_elem, frequencies[:6]))
+        # Stockage
+        convergence_results.append((i, frequencies[:6]))
 
     return convergence_results
-
-def Calcul_Eig(M_global1, K_global1, draw=True):
-    # Calcul Eigen values and vectors (Shapes).
-    w_carre, eigenModes = linalg.eigh(K_global1, M_global1)
-    w_carre = np.array(w_carre)  # np.array is used for doing some operations.
-    w = np.sqrt(w_carre)  # Pay attention that this w is in [rad/s].
-
-    eigenFreq = w / (2 * math.pi)  # For getting the normal frequencies in [Hz].
-
-    sorted_indices = np.argsort(eigenFreq)  # Sort eigenFreq and get the indices for sorting.
-    sorted_eigenFreq = eigenFreq[sorted_indices]
-
-    sorted_eigenModes = eigenModes[:, sorted_indices]  # Rearrange columns of eigenModes based on sorted indices.
-
-    print(f'\n################### sorted Eigen/Normal Frequencies (div = {div}): #####################')
-    print(sorted_eigenFreq[:6].real)
-
-    return M_global1, K_global1, sorted_eigenFreq, sorted_eigenModes
 
 
 #==================#
 #       Main       #
 #==================#
-freqencies, modes = extract_modes(["K_red"],["M_red"], n_modes=6)
-print("Premières fréquences [Hz] :", freqencies)
-for i,f in enumerate(freqencies,1):
-    print(f"  Mode {i} : {f:.4f} Hz")
-
-
 # Fonction pour tracer l'étude de convergence
-def plot_convergence_study(element_counts, frequencies):
+def plot_convergence_study(convergence_results, n_modes=6):
+    divs = [r[0] for r in convergence_results]
+    freq_matrix = np.array([r[1][:n_modes] for r in convergence_results])
+
     plt.figure(figsize=(10, 6))
-    for i in range(6):
-        plt.plot(element_counts, frequencies[:, i], marker='o', label=f'Mode {i + 1}')
-    plt.xlabel('Number of Elements per Beam')
-    plt.ylabel('Natural Frequency (Hz)')
-    plt.title('Convergence Study')
+    for i in range(n_modes):
+        plt.plot(divs, freq_matrix[:, i], marker='o', label=f'Mode {i + 1}')
+    plt.xlabel('Nombre de divisions (div)')
+    plt.ylabel('Fréquence naturelle [Hz]')
+    plt.title('Étude de convergence des fréquences naturelles')
     plt.legend()
-    plt.grid()
+    plt.grid(True)
     plt.show()
 
+
+
 #Draw Points Fct
-def plot_mode_shape(nodes, elements, mode_vector, mode_number, frequency, scale_factor=5.0):
-    """Plot the mode shape for a given mode number"""
-    degress_of_freedom = 6
-    fig = plt.figure(figsize=(12, 8))
+def plot_mode_shape(nodes, elements, mode_vector, fixed_nodes, mode_number, frequency,scale_factor=10.0):
+    nodes = np.asarray(nodes, dtype=float)
+    elements = np.asarray(elements, dtype=int)
+    mode_vector = np.real(np.asarray(mode_vector).flatten())
+
+    n_nodes = nodes.shape[0]
+    dof_per_node = 6
+
+    # === Reconstruction du vecteur modal complet ===
+    full_mode = np.zeros((n_nodes, dof_per_node))
+    free_idx = 0
+    for nd in range(n_nodes):
+        if nd in fixed_nodes:
+            continue
+        for k in range(dof_per_node):
+            if free_idx < mode_vector.size:
+                full_mode[nd, k] = mode_vector[free_idx]
+                free_idx += 1
+
+    # === Déformée (translations uniquement) ===
+    displacements = full_mode[:, :3]
+    if scale_factor is None:
+        max_disp = np.max(np.linalg.norm(displacements, axis=1))
+        coord_range = np.max(np.ptp(nodes, axis=0))
+        scale_factor = 0.1 * coord_range / max_disp if max_disp > 0 else 1.0
+    deformed = nodes + scale_factor * displacements
+
+    # === Tracé 3D ===
+    fig = plt.figure(figsize=(10, 7))
     ax = fig.add_subplot(111, projection='3d')
 
-    # Get original and deformed node coordinates
-    original_coords = nodes  # Skip node ID
+    # Barres originales et déformées
+    for (n1, n2) in elements:
+        x0, y0, z0 = nodes[n1]; x1, y1, z1 = nodes[n2]
+        xd0, yd0, zd0 = deformed[n1]; xd1, yd1, zd1 = deformed[n2]
 
-    full_mode_vector = np.zeros((len(nodes), degress_of_freedom))
-    free_dof_idx = 0
-    fixed_nodes = [5, 10, 16, 21]
-    fixed_dofs = [degress_of_freedom * (node) + i for node in fixed_nodes for i in range(degress_of_freedom)]
+        # Structure originale (gris clair)
+        ax.plot([x0, x1], [y0, y1], [z0, z1],
+                color='0.6', alpha=0.4, linewidth=1.2)
+        # Structure déformée (bleu)
+        ax.plot([xd0, xd1], [yd0, yd1], [zd0, zd1],
+                color='C0', linewidth=2.0)
 
-    for i in range(len(full_mode_vector)):
-        if i not in fixed_dofs:
-            full_mode_vector[i] = mode_vector[free_dof_idx]
-            free_dof_idx += 1
+    # Points avec masses concentrées (verts)
+    nodes_with_mass = [5, 6, 7, 8, 16, 17, 18, 19]
+    if nodes_with_mass is not None and len(nodes_with_mass) > 0:
+        nm = np.array(nodes_with_mass, dtype=int)
+        ax.scatter(nodes[nm, 0], nodes[nm, 1], nodes[nm, 2],
+                   c='limegreen', s=90, marker='o', edgecolors='black',
+                   label='Mass nodes')
 
-    # Extract translational components
-    deformed_coords = original_coords + scale_factor * full_mode_vector[:,:3]
+    # === Nœuds fixes (rouges) ===
+    if len(fixed_nodes) > 0:
+        fn = np.array(fixed_nodes, dtype=int)
+        ax.scatter(nodes[fn, 0], nodes[fn, 1], nodes[fn, 2],
+                   c='red', s=90, marker='s', label='Fixed supports')
 
-    # Plot original structure (gray)
-    for elem in elements:
-        node1_idx = elem[0] - 1
-        node2_idx = elem[1] - 1
-        x = [original_coords[node1_idx, 0], original_coords[node2_idx, 0]]
-        y = [original_coords[node1_idx, 1], original_coords[node2_idx, 1]]
-        z = [original_coords[node1_idx, 2], original_coords[node2_idx, 2]]
-        ax.plot(x, y, z, 'black', alpha=0.9, linewidth=1.5)
+    # === Échelle homogène ===
+    all_coords = np.vstack((nodes, deformed))
+    mid = np.mean(all_coords, axis=0)
+    span = np.ptp(all_coords, axis=0)
+    max_range = np.max(span)
+    for axis, mid_val in zip([ax.set_xlim, ax.set_ylim, ax.set_zlim], mid):
+        axis(mid_val - max_range / 2, mid_val + max_range / 2)
 
-
-    # Sort the list such that deformations are only applied to free nodes
-    allowed_deformed = []
-    for i, deformed in enumerate(deformed_coords):
-        if i in fixed_nodes:
-            allowed_deformed.append(original_coords[i])
-        else:
-            allowed_deformed.append(deformed)
-    allowed_deformed = np.array(allowed_deformed)
-
-    # Plot deformed structure (blue)
-    for elem in elements:
-        node1_idx = elem[0] - 1
-        node2_idx = elem[1] - 1
-        x = [allowed_deformed[node1_idx, 0], allowed_deformed[node2_idx, 0]]
-        y = [allowed_deformed[node1_idx, 1], allowed_deformed[node2_idx, 1]]
-        z = [allowed_deformed[node1_idx, 2], allowed_deformed[node2_idx, 2]]
-        ax.plot(x, y, z, 'b', linewidth=2)
-
-    # Plot nodes
-    ax.scatter(original_coords[:, 0], original_coords[:, 1], original_coords[:, 2],
-               c='gray', alpha=0.3, s=30)
-    ax.scatter(allowed_deformed[:, 0], allowed_deformed[:, 1], allowed_deformed[:, 2],
-               c='blue', s=30)
-
-    # Highlight fixed nodes
-    fixed_nodes_coords = original_coords[nodes[:, 2] == 0]
-    ax.scatter(fixed_nodes_coords[:, 0], fixed_nodes_coords[:, 1], fixed_nodes_coords[:, 2],
-               c='red', s=100, marker='s', label='Fixed supports')
-
-    # Set labels and title
+    # === Habillage ===
     ax.set_xlabel('X [m]')
     ax.set_ylabel('Y [m]')
     ax.set_zlabel('Z [m]')
-    ax.set_title(f'Mode {mode_number + 1}: {frequency:.2f} Hz')
-
-    # Add legend
-    ax.legend(['Original structure', 'Deformed shape', 'Nodes', 'Fixed supports'])
-
-    # Set equal aspect ratio
-    ax.set_box_aspect([np.ptp(original_coords[:, 0]),
-                       np.ptp(original_coords[:, 1]),
-                       np.ptp(original_coords[:, 2])])
+    ax.set_title(f"Mode {mode_number+1} — {frequency:.3f} Hz (scale={scale_factor:.2g})")
+    ax.view_init(elev=25, azim=45)
+    ax.legend()
     plt.tight_layout()
+    plt.show()
+
     return fig
 
-# Appel de la fonction plot_mode_shape pour chaque mode
-for mode_number in range(6):
-    print(f"Matrix shapes: eigenvectors.shape = {eigenvectors.shape}, frequencies.shape = {frequencies.shape}, elements.shape = {np.array(elemList).shape}, nodes.shape = {np.array(nodeList).shape}")
-    mode_vector = eigenvectors[:, mode_number]
-    frequency = frequencies[mode_number]
-    #fig = plot_mode_shape(nodes=np.array(nodeList), \
-                            #elements=np.array(elemList), \
-                            #mode_vector=mode_vector, \
-                            #mode_number=mode_number, \
-                            #frequency=frequency)
-    #plt.show()
-print("eigenmodes: ", eigenvectors)
-
-# Affichage des matrices de rigidité et de masse globales
-print("Matrice de rigidité globale K_global:")
-print(K_global)
-print("Matrice de masse globale M_global:")
-print(M_global)
-
-# Affichage des six premières fréquences naturelles
-print("Six premières fréquences naturelles :")
-for i in range(6):
-    print(f"Fréquence {i+1}: {frequencies[i]:.10f} Hz")
-
-# Effectuer l'étude de convergence
-convergence_results = convergence_study()
-frequencies_matrix = np.array([result[1] for result in convergence_results])
-element_counts = [result[0] for result in convergence_results]
-    # Tracer le graphique de l'étude de convergence
-plot_convergence_study(element_counts, frequencies_matrix)
-print("eigs", eigenvectors)
-
-# Tracer la courbe de convergence
-plt.figure(figsize=(8, 6))
-plt.plot(divisions, frequencies, marker='o', linestyle='-', label="Fréquence 1")
-plt.xlabel("Nombre de divisions (éléments finis)")
-plt.ylabel("Fréquence (Hz)")
-plt.title("Convergence des fréquences en fonction des divisions")
-plt.grid(True)
-plt.legend()
-plt.show()
 
 
 
 def main():
-    # Étape 1 – Charger géométrie et matériau
-    div_values = [0, 1, 2, 3, 4]
-    dofList = create_dof_list(n_nodes)
+    # === 1. Étude de convergence ===
+    convergence_results= convergence_study(main_beams, main_nodes, E, G, rho)
+    plot_convergence_study(convergence_results)
+
+    # === 2. Calcul final pour un div choisi (ex : maillage raffiné div=3) ===
+    div = 3
     elem_section_type = define_element_sections(main_beams)
-    new_nodes_array, new_beams_array, new_section_type = subdivide_mesh(main_nodes, main_beams, div_values, elem_section_type)
-    K_global, M_global = assemble_matrices(new_nodes_array, new_beams_array, new_section_type, E, G, rho)
-    M_ass, K_ass = assemble_global_matrices(K_global, M_global, dofList)
-    frequencies[:n_modes], eigvecs[:, :n_modes] = extract_modes(M_ass, K_ass, n_modes=6)
-    K_global1, M_global1, w, x = Calcul_Eig(M_global, K_global)
+    new_nodes, new_beams, section_type = subdivide_mesh(main_nodes, main_beams, div, elem_section_type)
+    dofList = create_dof_list(len(new_nodes))
+
+    # Assemblage global
+    M_global, K_global = assemble_matrices(new_nodes, new_beams, section_type, E, G, rho)
+    M_ass, K_ass = assemble_global_matrices(M_global, K_global, dofList)
+
+    # === 3. Extraction modale ===
+    frequencies, eigvecs = extract_modes(K_ass, M_ass, n_modes=6)
+
+    # === 4. Affichage des résultats ===
+    print("\n=================== MATRICES GLOBALES ===================")
+    print("Matrice de masse globale M_ass :")
+    print(M_ass)
+    print("\nMatrice de rigidité globale K_ass :")
+    print(K_ass)
+
+    print("\n=================== FREQUENCES PROPRES ===================")
+    for i, f in enumerate(frequencies[:6]):
+        print(f"Mode {i+1} : {f:.4f} Hz")
+
+    print("\n=================== VECTEURS PROPRES =====================")
+    print(eigvecs[:, :6])
+
+    # === 5. Visualisation des modes ===
+    fixed_nodes = [5, 10, 16, 21]
+    for mode_number in range(6):
+        mode_vector = eigvecs[:, mode_number]
+        frequency = frequencies[mode_number]
+        plot_mode_shape(
+            nodes=np.array(new_nodes),
+            elements=new_beams,
+            mode_vector=mode_vector,
+            fixed_nodes=fixed_nodes,
+            mode_number=mode_number,
+            frequency=frequency
+        )
+
+    plt.show()
 
 
 if __name__ == "__main__":
