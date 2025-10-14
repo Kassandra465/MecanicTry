@@ -508,7 +508,7 @@ plt.show()
 def main():
     # Étape 1 – Charger géométrie et matériau
     div_values = [0, 1, 2, 3, 4]
-    dofList = create_dof_list(n_nodes: int)
+    dofList = create_dof_list(n_nodes)
     elem_section_type = define_element_sections(main_beams)
     new_nodes_array, new_beams_array, new_section_type = subdivide_mesh(main_nodes, main_beams, div_values, elem_section_type)
     K_global, M_global = assemble_matrices(new_nodes_array, new_beams_array, new_section_type, E, G, rho)
