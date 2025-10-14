@@ -66,6 +66,37 @@ def define_element_sections(main_beams):
 
     return elem_section_dict
 
+def compute_total_mass(main_nodes, main_beams, elem_section_dict, rho):
+    roof_mass = 500
+    structure_mass = 0
+    # Masse des poutres (tubes)
+    for i, (n1, n2) in enumerate(main_beams):
+        # Coordonnées des deux nœuds
+        coord1 = np.array(main_nodes[n1])
+        coord2 = np.array(main_nodes[n2])
+
+        # Longueur de la poutre
+        L = np.linalg.norm(coord2 - coord1)
+
+        # Aire de section transversale
+        A = elem_section_dict[i]["A"]
+
+        # Masse de cet élément
+        m_elem = rho * A * L
+        structure_mass += m_elem
+
+    # Masse concentrée du toit (répartie sur les nœuds)
+    total_mass = structure_mass + roof_mass
+
+    # Affichage
+    print("\n============== MASSE TOTALE ==============")
+    print(f"Masse des poutres : {structure_mass:.2f} kg")
+    print(f"Masse concentrée du toit : {roof_mass:.2f} kg")
+    print(f"Masse totale de la structure : {total_mass:.2f} kg")
+    print("==========================================")
+
+    return total_mass
+
 
 # ==========================
 # Division en elements per beam
@@ -459,11 +490,7 @@ def main():
     frequencies, eigvecs = extract_modes(K_ass, M_ass, n_modes=6)
 
     # === 4. Affichage des résultats ===
-    print("\n=================== MATRICES GLOBALES ===================")
-    print("Matrice de masse globale M_ass :")
-    print(M_ass)
-    print("\nMatrice de rigidité globale K_ass :")
-    print(K_ass)
+    total_mass = compute_total_mass(main_nodes, main_beams, elem_section_type, rho)
 
     print("\n=================== FREQUENCES PROPRES ===================")
     for i, f in enumerate(frequencies[:6]):
@@ -471,6 +498,13 @@ def main():
 
     print("\n=================== VECTEURS PROPRES =====================")
     print(eigvecs[:, :6])
+
+
+    print("\n=================== MATRICES GLOBALES ===================")
+    print("Matrice de masse globale M_ass :")
+    print(M_ass)
+    print("\nMatrice de rigidité globale K_ass :")
+    print(K_ass)
 
     # === 5. Visualisation des modes ===
     fixed_nodes = [5, 10, 16, 21]
