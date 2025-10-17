@@ -1,8 +1,6 @@
 import numpy as np
-import math
 import matplotlib.pyplot as plt
 from scipy.linalg import block_diag, eigh
-from scipy import linalg
 
 # ==========================
 # Matériaux et propriétés
@@ -11,8 +9,6 @@ rho = 7800.0           # kg/m3
 E = 210e9              # Pa
 nu = 0.3
 G = E / (2*(1+nu))     # Module de cisaillement
-
-div = 0  # Number of beams' divisions (=> (div+1) is the number of elements per beam).
 
 # ==========================
 # Géométrie de la structure
@@ -33,7 +29,7 @@ main_beams = np.array([
 ])
 
 # ==========================
-# Section differentes
+# Section
 # ==========================
 def section(D, t):
     Di = D - 2 * t
@@ -44,148 +40,99 @@ def section(D, t):
     return A, Iy, Iz, Jx
 
 
-def define_element_sections(main_beams):
+def define_element_sections(main_beams): #créé un dictionaire pour attribuer les bonnes sections au bon endroit après division
     # Cadres rouges
     A_f, Iy_f, Iz_f, Jx_f = section(0.120, 0.005)
     # Poutres bleues
     A_s, Iy_s, Iz_s, Jx_s = section(0.070, 0.003)
 
-    elem_section_dict = {}
+    elem_section_type = {}
 
     for i in range(len(main_beams)):
         if i < 22:
-            elem_section_dict[i] = {
+            elem_section_type[i] = {
                 "type": "frame",
                 "A": A_f, "Iy": Iy_f, "Iz": Iz_f, "Jx": Jx_f
             }
         else:
-            elem_section_dict[i] = {
+            elem_section_type[i] = {
                 "type": "support",
                 "A": A_s, "Iy": Iy_s, "Iz": Iz_s, "Jx": Jx_s
             }
 
-    return elem_section_dict
+    return elem_section_type
 
-def compute_total_mass(main_nodes, main_beams, elem_section_dict, rho):
-    roof_mass = 500
-    structure_mass = 0
-    # Masse des poutres (tubes)
-    for i, (n1, n2) in enumerate(main_beams):
-        # Coordonnées des deux nœuds
-        coord1 = np.array(main_nodes[n1])
-        coord2 = np.array(main_nodes[n2])
-
-        # Longueur de la poutre
+# -----------------------
+# Calcul masse totale (poutres + toit)
+# -----------------------
+def compute_total_mass(nodes, beams, elem_section_type, rho):
+    roof_mass = 500.0
+    structure_mass = 0.0
+    for i, (n1, n2) in enumerate(beams):
+        coord1 = np.array(nodes[n1])
+        coord2 = np.array(nodes[n2])
         L = np.linalg.norm(coord2 - coord1)
-
-        # Aire de section transversale
-        A = elem_section_dict[i]["A"]
-
-        # Masse de cet élément
-        m_elem = rho * A * L
-        structure_mass += m_elem
-
-    # Masse concentrée du toit (répartie sur les nœuds)
+        A = elem_section_type[i]["A"]
+        structure_mass += rho * A * L
     total_mass = structure_mass + roof_mass
-
-    # Affichage
     print("\n============== MASSE TOTALE ==============")
     print(f"Masse des poutres : {structure_mass:.2f} kg")
     print(f"Masse concentrée du toit : {roof_mass:.2f} kg")
     print(f"Masse totale de la structure : {total_mass:.2f} kg")
     print("==========================================")
-
     return total_mass
-
 
 # ==========================
 # Division en elements per beam
 # ==========================
-# Génération des nœuds et poutres avec divisions
-"""
-if (div > 0):
-
-    current_node_index = len(main_nodes)  # Index for new nodes
-
-    for element in main_beams:
-        node1, node2 = element
-        coord1 = main_nodes[node1]
-        coord2 = main_nodes[node2]
-
-        # Add intermediate nodes
-        previous_node = node1
-        for i in range(1, div + 1):
-            interpolated_coord = coord1 + i * (coord2 - coord1) / (div + 1)
-            new_nodes.append(interpolated_coord)
-            current_node_index += 1
-            new_beams.append([previous_node, current_node_index])
-            previous_node = current_node_index
-        # Add the final segment
-        new_beams.append([previous_node, node2])
-    main_nodes_add = np.vstack((main_nodes, np.array(new_nodes)))
-    main_beams_add = np.array(new_beams)
-else:
-    main_nodes_add = main_nodes
-    main_beams_add = main_beams
-
-# Convert to lists if needed
-nodeList = main_nodes_add.tolist()
-elemList = main_beams_add.tolist()
-"""
-
 def subdivide_mesh(main_nodes, main_beams, div, elem_section_type):
-
     if div == 0:
         return main_nodes.copy(), main_beams.copy(), elem_section_type.copy()
-
     new_nodes = []
     new_beams = []
     new_section_type = {}
     current_node_index = len(main_nodes)
     new_elem_index = 0
-
     for i, (node1, node2) in enumerate(main_beams):
         coord1 = main_nodes[node1]
         coord2 = main_nodes[node2]
 
-        # Identify type of current beam (red/blue)
+        # Identifie le type de section
         beam_type = elem_section_type.get(i, 'frame')
 
         previous_node = node1
 
-        # Create intermediate nodes
+        # Créé les noeuds intermédiaire
         for k in range(1, div + 1):
             new_coord = coord1 + k * (coord2 - coord1) / (div + 1)
             new_nodes.append(new_coord)
 
-            # Create a new subdivided beam
+            # créé les subdivisions
             new_beams.append([previous_node, current_node_index])
-            new_section_type[new_elem_index] = beam_type  # same type as parent
+            new_section_type[new_elem_index] = beam_type
             new_elem_index += 1
 
             previous_node = current_node_index
             current_node_index += 1
 
-        # Connect last new node to the original end
+        # Connecte le dernier noeud
         new_beams.append([previous_node, node2])
         new_section_type[new_elem_index] = beam_type
         new_elem_index += 1
 
-    # Combine original and new nodes
+    # Combine tous les noeuds
     new_nodes_array = np.vstack((main_nodes, np.array(new_nodes)))
     new_beams_array = np.array(new_beams, dtype=int)
 
     return new_nodes_array, new_beams_array, new_section_type
 
-# ==========================
-# DoFs
-# ==========================
+# -----------------------
+# Degrés de liberté (6 par noeud)
+# -----------------------
 def create_dof_list(n_nodes: int):
     dof_list = []
-
     for i in range(n_nodes):
-        start = i * 6
-        node_dofs = list(range(start, start + 6))
+        node_dofs = list(range(i * 6, i * 6 + 6))
         dof_list.append(node_dofs)
 
     return dof_list
@@ -199,17 +146,15 @@ def Rotation_fonction(node1, node2):
     if L < 1e-9:
         raise ValueError("Longueur d'élément nulle")
     ex = x_axis / L
-    arbitrary = np.array([0, 0, 1.0]) if abs(ex[2]) < 0.99 else np.array([0, 1.0, 0])
-    ey = np.cross(arbitrary, ex)
+    ey = np.cross([0, 0, 1], ex)
+    if np.linalg.norm(ey) < 1e-6:
+        ey = np.cross([0, 1, 0], ex)
     ey /= np.linalg.norm(ey)
     ez = np.cross(ex, ey)
     R = np.vstack((ex, ey, ez))
-    # Correction : orthonormalisation finale
-    U, _, Vt = np.linalg.svd(R)
-    R = U @ Vt
     return R
 
-# ==========================
+#=========================
 # Matrices élémentaires
 # ==========================
 def K_el(E, G, A, l, Iy, Iz, Jx):
@@ -261,22 +206,22 @@ def assemble_matrices(new_nodes_array, beams, elem_section_dict, E, G, rho):
         node2 = np.array(new_nodes_array[n2])
         L = np.linalg.norm(node2 - node1)
 
-        # ---- section properties pour cet élément
+        # section properties pour cet élément
         props = elem_section_dict[e]
         A = props['A']; Iy = props['Iy']; Iz = props['Iz']; Jx = props['Jx']
 
-        # ---- matrices locales
+        # matrices locales
         Ke_local = K_el(E, G, A, L, Iy, Iz, Jx)
         Me_local = M_el(rho, A, L, Iy, Iz)
 
-        # ---- rotation et transformation
+        # rotation et transformation
         R = Rotation_fonction(node1, node2)   # gère inclinaison en 3D
         T = block_diag(R, R, R, R)  # 12x12
 
         Ke_g = T.T @ Ke_local @ T
         Me_g = T.T @ Me_local @ T
 
-        # ---- assemblage dans K_global/M_global
+        # assemblage dans K_global/M_global
         loc = dof_list[n1] + dof_list[n2]   # 12 indices
         for i_loc in range(12):
             for j_loc in range(12):
@@ -286,21 +231,18 @@ def assemble_matrices(new_nodes_array, beams, elem_section_dict, E, G, rho):
     return K_global, M_global
 
 
- #compter le nombre d'élément à partir des grosses beam
-
-
 def assemble_global_matrices(K_s, M_s, dofList):
     nodes_with_mass = [5, 6, 7, 8, 16, 17, 18, 19] # masses du toit
     roof_mass = 500.0 / 8
     M_global = M_s.copy()
     K_global = K_s.copy()
 
-    # --- Ajout des masses concentrées sur les DDL de translation ---
+    # Ajout des masses concentrées sur les DDL de translation
     for nd in nodes_with_mass:
         for dof in dofList[nd][:3]:  # ux, uy, uz uniquement
             M_global[dof, dof] += roof_mass
 
-    # --- Application des encastrements ---
+    # Application des encastrements
     fixed_nodes = [5, 10, 16, 21]  # encastrements
     fixed_dofs = [d for nd in fixed_nodes for d in dofList[nd]]
 
@@ -314,19 +256,15 @@ def assemble_global_matrices(K_s, M_s, dofList):
 # Extraction fréquences propres
 # ==========================
 def extract_modes(K_reduced, M_reduced, n_modes=6):
-    #Correction numérique
-    #K_reduced = 0.5 * (K_reduced + K_reduced.T)
-    #M_reduced = 0.5 * (M_reduced + M_reduced.T)
-    # --- Vérification ---
+    # Vérification
     if np.any(np.isnan(K_reduced)) or np.any(np.isnan(M_reduced)):
-        raise ValueError("Matrices K ou M contiennent des NaN (élément mal défini).")
+        raise ValueError("Matrices K ou M contiennent des élément mal défini.")
     if np.any(np.linalg.eigvals(M_reduced) <= 0):
         raise ValueError(
-            "La matrice de masse M n’est pas positive définie ! Vérifie les sections ou les masses ajoutées.")
+            "La matrice de masse M n’est pas positive définie !")
 
     # Résolution
     eigvals, eigvecs = eigh(K_reduced, M_reduced)
-    # Valeurs
     eigvals = np.real(eigvals)
     eigvals[eigvals < 0] = 0.0
     # Tri
@@ -345,20 +283,18 @@ def extract_modes(K_reduced, M_reduced, n_modes=6):
 
     return frequencies[:n_modes], eigvecs[:, :n_modes]
 
-
-# Fonction pour effectuer l'étude de convergence
+# ==========================
+# Etude de convergence
+# ==========================
 def convergence_study(main_beams, main_nodes, E, G, rho):
     div_values = [0, 1, 2, 3, 4, 5]
     elem_section_type = define_element_sections(main_beams)
     convergence_results = []
-
     for i in div_values:
         # Assemblage
-        new_nodes_array, new_beams_array, new_section_type = subdivide_mesh(
-            main_nodes, main_beams, i, elem_section_type)
+        new_nodes_array, new_beams_array, new_section_type = subdivide_mesh(main_nodes, main_beams, i, elem_section_type)
         dofList = create_dof_list(len(new_nodes_array))
-        M_global, K_global = assemble_matrices(new_nodes_array, new_beams_array,
-                                               new_section_type, E, G, rho)
+        M_global, K_global = assemble_matrices(new_nodes_array, new_beams_array, new_section_type, E, G, rho)
         M_ass, K_ass = assemble_global_matrices(M_global, K_global, dofList)
 
         # Extraction
@@ -388,10 +324,8 @@ def plot_convergence_study(convergence_results, n_modes=6):
     plt.grid(True)
     plt.show()
 
-
-
-#Draw Points Fct
-def plot_mode_shape(nodes, elements, mode_vector, fixed_nodes, mode_number, frequency,scale_factor=10.0):
+#Fonction pour tracer les modes shapes avec la structure originale
+def plot_mode_shape(nodes, elements, mode_vector, fixed_nodes, mode_number, frequency,scale_factor=20.0):
     nodes = np.asarray(nodes, dtype=float)
     elements = np.asarray(elements, dtype=int)
     mode_vector = np.real(np.asarray(mode_vector).flatten())
@@ -399,7 +333,7 @@ def plot_mode_shape(nodes, elements, mode_vector, fixed_nodes, mode_number, freq
     n_nodes = nodes.shape[0]
     dof_per_node = 6
 
-    # === Reconstruction du vecteur modal complet ===
+    # Reconstruction du vecteur modal complet
     full_mode = np.zeros((n_nodes, dof_per_node))
     free_idx = 0
     for nd in range(n_nodes):
@@ -410,7 +344,7 @@ def plot_mode_shape(nodes, elements, mode_vector, fixed_nodes, mode_number, freq
                 full_mode[nd, k] = mode_vector[free_idx]
                 free_idx += 1
 
-    # === Déformée (translations uniquement) ===
+    # Déformée (translations uniquement)
     displacements = full_mode[:, :3]
     if scale_factor is None:
         max_disp = np.max(np.linalg.norm(displacements, axis=1))
@@ -418,7 +352,7 @@ def plot_mode_shape(nodes, elements, mode_vector, fixed_nodes, mode_number, freq
         scale_factor = 0.1 * coord_range / max_disp if max_disp > 0 else 1.0
     deformed = nodes + scale_factor * displacements
 
-    # === Tracé 3D ===
+    # Tracé
     fig = plt.figure(figsize=(10, 7))
     ax = fig.add_subplot(111, projection='3d')
 
@@ -442,13 +376,13 @@ def plot_mode_shape(nodes, elements, mode_vector, fixed_nodes, mode_number, freq
                    c='limegreen', s=90, marker='o', edgecolors='black',
                    label='Mass nodes')
 
-    # === Nœuds fixes (rouges) ===
+    # Nœuds fixes (rouges)
     if len(fixed_nodes) > 0:
         fn = np.array(fixed_nodes, dtype=int)
         ax.scatter(nodes[fn, 0], nodes[fn, 1], nodes[fn, 2],
                    c='red', s=90, marker='s', label='Fixed supports')
 
-    # === Échelle homogène ===
+    # Échelle homogène
     all_coords = np.vstack((nodes, deformed))
     mid = np.mean(all_coords, axis=0)
     span = np.ptp(all_coords, axis=0)
@@ -456,7 +390,7 @@ def plot_mode_shape(nodes, elements, mode_vector, fixed_nodes, mode_number, freq
     for axis, mid_val in zip([ax.set_xlim, ax.set_ylim, ax.set_zlim], mid):
         axis(mid_val - max_range / 2, mid_val + max_range / 2)
 
-    # === Habillage ===
+    # Légende
     ax.set_xlabel('X [m]')
     ax.set_ylabel('Y [m]')
     ax.set_zlabel('Z [m]')
@@ -469,15 +403,13 @@ def plot_mode_shape(nodes, elements, mode_vector, fixed_nodes, mode_number, freq
     return fig
 
 
-
-
 def main():
-    # === 1. Étude de convergence ===
+    # Étude de convergence
     convergence_results= convergence_study(main_beams, main_nodes, E, G, rho)
     plot_convergence_study(convergence_results)
 
-    # === 2. Calcul final pour un div choisi (ex : maillage raffiné div=3) ===
-    div = 3
+    # Calcul final pour div 4 (après étude de convergence)
+    div = 4
     elem_section_type = define_element_sections(main_beams)
     new_nodes, new_beams, section_type = subdivide_mesh(main_nodes, main_beams, div, elem_section_type)
     dofList = create_dof_list(len(new_nodes))
@@ -486,12 +418,10 @@ def main():
     M_global, K_global = assemble_matrices(new_nodes, new_beams, section_type, E, G, rho)
     M_ass, K_ass = assemble_global_matrices(M_global, K_global, dofList)
 
-    # === 3. Extraction modale ===
+    # Extraction modale
     frequencies, eigvecs = extract_modes(K_ass, M_ass, n_modes=6)
 
-    # === 4. Affichage des résultats ===
-    total_mass = compute_total_mass(main_nodes, main_beams, elem_section_type, rho)
-
+    #Affichage des résultats
     print("\n=================== FREQUENCES PROPRES ===================")
     for i, f in enumerate(frequencies[:6]):
         print(f"Mode {i+1} : {f:.4f} Hz")
@@ -506,7 +436,7 @@ def main():
     print("\nMatrice de rigidité globale K_ass :")
     print(K_ass)
 
-    # === 5. Visualisation des modes ===
+    # Visualisation des modes
     fixed_nodes = [5, 10, 16, 21]
     for mode_number in range(6):
         mode_vector = eigvecs[:, mode_number]
