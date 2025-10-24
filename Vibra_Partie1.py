@@ -409,7 +409,7 @@ def main():
     plot_convergence_study(convergence_results)
 
     # Calcul final pour div 4 (après étude de convergence)
-    div = 4
+    div = 3
     elem_section_type = define_element_sections(main_beams)
     new_nodes, new_beams, section_type = subdivide_mesh(main_nodes, main_beams, div, elem_section_type)
     dofList = create_dof_list(len(new_nodes))
@@ -456,5 +456,15 @@ def main():
 if __name__ == "__main__":
     main()
 
+div = 3
+elem_section_type = define_element_sections(main_beams)
+new_nodes, new_beams, section_type = subdivide_mesh(main_nodes, main_beams, div, elem_section_type)
+dofList = create_dof_list(len(new_nodes))
+# Assemblage global
+M_global, K_global = assemble_matrices(new_nodes, new_beams, section_type, E, G, rho)
+M_ass, K_ass = assemble_global_matrices(M_global, K_global, dofList)
+
+# Extraction modale
+frequencies, eigvecs = extract_modes(K_ass, M_ass, n_modes=6)
 
 
