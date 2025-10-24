@@ -89,27 +89,65 @@ def FFT_signal(y, dt):
     mag = 2 / N * np.abs(Y[:N // 2])
     return f, mag
 
+# ==========================
+# PSD and RMS
+# ==========================
 def compute_PSD_and_RMS(signal, fs):
-    # Duration of the signal
-    T = len(signal) / fs
-
-    # FFT computation
+    N = len(signal)
+    T = N / fs  # total duration
     Y = np.fft.fft(signal)
-    freqs = np.fft.fftfreq(len(signal), 1/fs)
+    freqs = np.fft.fftfreq(N, d=1 / fs)
 
-    # Keep only positive frequencies
+    # Keep positive frequencies only
     pos_idx = freqs >= 0
-    freqs = freqs[pos_idx]
-    Y = Y[pos_idx]
+    f_psd = freqs[pos_idx]
+    PSD = (np.abs(Y[pos_idx]) ** 2) / T  # (m/s²)²/Hz
 
-    # PSD according to definition: |Y(f)|^2 / T
-    PSD = (np.abs(Y)**2) / T
+    # Compute RMS
+    df = f_psd[1] - f_psd[0]
+    integrale = np.sum(PSD) * df
+    rms = np.sqrt(integrale)
 
-    # RMS computed as sqrt(integral(PSD df))
-    df = freqs[1] - freqs[0]
-    rms_value = np.sqrt(np.trapezoid(PSD, freqs))
+    return freqs, PSD, rms
 
-    return freqs, PSD, rms_value
+# ==========================
+# Convergence study
+# ==========================
+def convergence_study(Phi, M, K, F, omega_n, Omega, U_ref, idx, n_modes):
+    amp_ref = abs(U_ref[idx])
+    amp_disp, amp_acc = [], []
+
+    # Initialize cumulative modal responses
+    u_disp_sum = np.zeros_like(U_ref, dtype=complex)
+    u_acc_sum = np.zeros_like(U_ref, dtype=complex)
+
+    # Loop over modes incrementally
+    for k in range(1, n_modes + 1):
+        phi_k = Phi[:, k-1]
+        mu_k = phi_k.T @ M @ phi_k
+        denom = (omega_n[k-1]**2 - Omega**2)
+
+        # Modal displacement contribution
+        qk_disp = (phi_k.T @ F) / (mu_k * denom)
+        u_disp_sum += phi_k * qk_disp
+
+        # Modal acceleration contribution (with static correction)
+        qk_acc = (phi_k.T @ F) / (mu_k * (omega_n[k-1]**2 - Omega**2) * (omega_n[k-1]**2))
+        u_acc_sum += phi_k * qk_acc
+
+        # Store amplitude for current number of modes
+        amp_disp.append(abs(u_disp_sum[idx]))
+        amp_acc.append(abs((np.linalg.inv(K) @ F + (Omega**2) * u_acc_sum)[idx]))
+
+    # Convert to numpy arrays
+    amp_disp = np.array(amp_disp)
+    amp_acc = np.array(amp_acc)
+
+    # Relative errors (%)
+    err_disp = 100 * np.abs((amp_disp - amp_ref) / amp_ref)
+    err_acc = 100 * np.abs((amp_acc - amp_ref) / amp_ref)
+
+    return amp_ref, amp_disp, amp_acc, err_disp, err_acc
 
 # ==========================
 # Main
@@ -124,17 +162,19 @@ def main2():
     # Réponses stationnaires
     U_ref = FRF_solution(M_ass, C, K_ass, F, Omega)
     x_disp = modal_displacement(Phi, M_ass, F, omega_n, Omega, n_modes)
+    x_disp_corrected = np.linalg.inv(K_ass) @ F + x_disp
     print("Amp FRF:", abs(U_ref[idx])),
     print("Amp disp", abs(x_disp[idx]))
+    print("Amp disp-corrected", abs(x_disp_corrected[idx]))
     x_acc = modal_acceleration(Phi, M_ass, K_ass, F, omega_n, Omega, n_modes)
     print("Amp acc:", abs(x_acc[idx]))
 
-    # Time reconstruction (steady-state)
+    # Temps (steady-state)
     dt = 1 / fs
     t = np.arange(0, t_end, dt)
 
     u_exc = np.real(U_ref[idx] * np.cos(Omega * t))
-    # Modal displacement & acceleration approximations
+    # Modal displacement & acceleration
     u_disp = np.real(modal_displacement(Phi, M_ass, F, omega_n, Omega, n_modes)[idx] * np.cos(Omega * t))
     u_acc = np.real(modal_acceleration(Phi, M_ass, K_ass, F, omega_n, Omega, n_modes)[idx] * np.cos(Omega * t))
 
@@ -143,39 +183,54 @@ def main2():
     f_md, fft_md = FFT_signal(u_disp, dt)
     f_ma, fft_ma = FFT_signal(u_acc, dt)
 
-    f_psd, PSD, rms = compute_PSD_and_RMS(u_exc, fs)
+    acc_exc = - (Omega ** 2) * u_exc
+    f_psd, PSD, rms = compute_PSD_and_RMS(acc_exc, fs)
     print(f"RMS (computed): {rms:.3e}")
 
-    # Convergence
-    amp_ref = abs(U_ref[idx])
-    amp_disp, amp_acc = [], []
-    for k in range(1, n_modes + 1):
-        xd = modal_displacement(Phi, M_ass, F, omega_n, Omega, k)
-        x_d = np.linalg.inv(K_ass) @ F + xd
-        xa = modal_acceleration(Phi, M_ass, K_ass, F, omega_n, Omega, k)
-        amp_disp.append(abs(x_d[idx]))
-        amp_acc.append(abs(xa[idx]))
+    #convergence
+    amp_ref, amp_disp, amp_acc, err_disp, err_acc = convergence_study(Phi, M_ass, K_ass, F, omega_n, Omega, U_ref, idx, n_modes)
 
-    err_disp = 100 * abs((amp_disp - amp_ref) / amp_ref)
-    err_acc = 100 * abs((amp_acc - amp_ref) / amp_ref)
+    # Plots steady-state response
+    # Exact FRF response
+    plt.figure(figsize=(8, 4))
+    plt.plot(t, u_exc, 'k', linewidth=1.8)
+    plt.xlabel('Time [s]')
+    plt.ylabel('Displacement [m]')
+    plt.title('Exact steady-state response (FRF)')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
 
-    amp_ref = abs(U_ref[idx])
-    print("Mode count | amp_disp [m]    | amp_acc [m]    | abs_err_disp [m] | abs_err_acc [m]")
-    for k in range(1, n_modes + 1):
-        xd = modal_displacement(Phi, M_ass, F, omega_n, Omega, k)
-        xa = modal_acceleration(Phi, M_ass, K_ass, F, omega_n, Omega, k)
-        print(
-            f"{k:9d} | {abs(xd[idx]):12.4e} | {abs(xa[idx]):12.4e} | {abs(abs(xd[idx]) - amp_ref):14.4e} | {abs(abs(xa[idx]) - amp_ref):14.4e}")
+    # Modal displacement method
+    plt.figure(figsize=(8, 4))
+    plt.plot(t, u_disp, 'b', linewidth=1.8)
+    plt.xlabel('Time [s]')
+    plt.ylabel('Displacement [m]')
+    plt.title('Steady-state response - Modal Displacement Method')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
 
-    # PLOTS AND RESULTS
+    # Modal acceleration method
+    plt.figure(figsize=(8, 4))
+    plt.plot(t, u_acc, 'r', linewidth=1.8)
+    plt.xlabel('Time [s]')
+    plt.ylabel('Displacement [m]')
+    plt.title('Steady-state response - Modal Acceleration Method')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+    #combined plot
     plt.figure()
-    plt.plot(t, u_exc, label='Exact FRF')
-    plt.plot(t, u_disp, '--', label='Modal displacement')
+    plt.plot(t, u_exc, '--', label='Exact FRF')
+    plt.plot(t, u_disp, label='Modal displacement')
     plt.plot(t, u_acc, ':', label='Modal acceleration')
     plt.xlabel('Time [s]')
     plt.ylabel('Displacement [m]')
     plt.legend(); plt.grid(); plt.title('Steady-state response'); plt.show()
 
+    #plot FFT
     plt.figure()
     plt.plot(f_ref, fft_ref, label='FRF')
     plt.plot(f_md, fft_md, label='Modal displacement')
@@ -184,6 +239,35 @@ def main2():
     plt.xlabel('Frequency [Hz]'); plt.ylabel('Amplitude')
     plt.title('FFT at the excitation node'); plt.show()
 
+    #Plot convergence
+    modes = np.arange(1, n_modes + 1)
+    plt.figure(figsize=(8,5))
+    plt.plot(modes, amp_disp, 'o-', label='Modal displacement')
+    plt.plot(modes, amp_acc, 's--', label='Modal acceleration')
+    plt.hlines(amp_ref, 1, n_modes, colors='k', linestyles=':', label='FRF reference')
+    plt.yscale('log')
+    plt.xlabel('Number of modes')
+    plt.ylabel('Amplitude [m]')
+    plt.title('Convergence of modal approximations')
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+    # Plot relative errors
+    plt.figure(figsize=(8,5))
+    plt.plot(modes, err_disp, 'o-', label='Rel. error displacement [%]')
+    plt.plot(modes, err_acc, 's--', label='Rel. error acceleration [%]')
+    plt.yscale('log')
+    plt.xlabel('Number of modes')
+    plt.ylabel('Relative error (%)')
+    plt.title('Relative error vs number of modes')
+    plt.legend()
+    plt.grid(True, which='both')
+    plt.tight_layout()
+    plt.show()
+
+    #plot PSD
     plt.figure()
     plt.semilogy(f_psd, PSD)
     plt.xlabel('Frequency [Hz]')
@@ -191,14 +275,11 @@ def main2():
     plt.title('PSD of the lateral acceleration')
     plt.grid(); plt.show()
 
-
-    modes = np.arange(1, n_modes + 1)
-    plt.figure()
-    plt.plot(modes, amp_disp, 'o-', label='Displacement method')
-    plt.plot(modes, amp_acc, 's--', label='Acceleration method')
-    plt.hlines(amp_ref, 1, n_modes, colors='k', linestyles=':', label='FRF reference')
-    plt.xlabel('Number of modes'); plt.ylabel('Amplitude [m]')
-    plt.legend(); plt.grid(); plt.title('Convergence of modal methods'); plt.show()
+    #Resulats
+    print("\nMode |   amp_disp [m]    |    amp_acc [m]    | abs_err_disp [m] | abs_err_acc [m]")
+    for k in range(n_modes):
+        print(f"{k + 1:9d} | {amp_disp[k]:12.4e} | {amp_acc[k]:12.4e} | "
+              f"{abs(amp_disp[k] - amp_ref):14.4e} | {abs(amp_acc[k] - amp_ref):14.4e}")
 
     print("\n----- SUMMARY -----")
     print(f"A = {A_force} N, f = {f_exc} Hz, Ω = {Omega:.3f} rad/s")
@@ -206,6 +287,6 @@ def main2():
     print("Relative errors (%) - displacement:", err_disp)
     print("Relative errors (%) - acceleration:", err_acc)
 
-# -------------------- EXÉCUTION --------------------
+
 if __name__ == "__main__":
     main2()
