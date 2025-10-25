@@ -15,7 +15,7 @@ fs = 200              # [Hz] Fréquence d’échantillonnage
 t_end = 5.0           # [s] Durée d’observation
 zeta_target = 0.005   # Amortissement 0.5%
 
-n_modes = 6           # Nombre de modes considérés
+n_modes = 6          # Nombre de modes considérés
 
 # FORCE D’EXCITATION
 node_green = 6
@@ -100,15 +100,15 @@ def compute_PSD_and_RMS(signal, fs):
 
     # Keep positive frequencies only
     pos_idx = freqs >= 0
-    f_psd = freqs[pos_idx]
-    PSD = (np.abs(Y[pos_idx]) ** 2) / T  # (m/s²)²/Hz
+    f_pos = freqs[pos_idx]
+    PSD = 2 * (np.abs(Y[pos_idx]) ** 2) / T  # (m/s²)²/Hz
 
     # Compute RMS
-    df = f_psd[1] - f_psd[0]
+    df = f_pos[1] - f_pos[0]
     integrale = np.sum(PSD) * df
     rms = np.sqrt(integrale)
 
-    return freqs, PSD, rms
+    return f_pos, PSD, rms
 
 # ==========================
 # Convergence study
@@ -185,7 +185,7 @@ def main2():
 
     acc_exc = - (Omega ** 2) * u_exc
     f_psd, PSD, rms = compute_PSD_and_RMS(acc_exc, fs)
-    print(f"RMS (computed): {rms:.3e}")
+    print(f"RMS : {rms:.3e}")
 
     #convergence
     amp_ref, amp_disp, amp_acc, err_disp, err_acc = convergence_study(Phi, M_ass, K_ass, F, omega_n, Omega, U_ref, idx, n_modes)
