@@ -31,22 +31,20 @@ omega_n = 2 * np.pi * freqs
 Phi = np.array(eigvecs)
 n_modes = min(Phi.shape[1], n_modes)
 
-# ==========================
-# Rayleigh damping
-# ==========================-
-def rayleigh_damping(M, K, omega, zeta=zeta_target):
-    w1, w2 = omega[0], omega[1]
-    beta = (2 * zeta) / (w1 + w2)
-    alpha = beta * w1 * w2
-    C = alpha * M + beta * K
-    zetas = [0.5 * (alpha / w + beta * w) for w in omega[:n_modes]]
-    return C, alpha, beta, np.array(zetas)
+# --- PARAMETERS ---
+A_force = 500.0      # [N]
+f_exc = 2.4          # [Hz]
+Omega = 2 * np.pi * f_exc
+fs = 200.0           # sampling rate [Hz]
+t_end = 5.0          # duration [s]
+dt = 1 / fs
+t = np.arange(0, t_end, dt)
 
 # ==========================
 # Exact stationary response (FRF method)
 # ==========================
-def FRF_solution(M, C, K, F, Omega):
-    A = -Omega**2 * M + 1j * Omega * C + K
+def FRF_solution(M, K, F, Omega):
+    A = -Omega**2 * M + K
     return inv(A) @ F
 
 # ==========================
@@ -62,6 +60,7 @@ def modal_displacement(Phi, M, F, omega_n, Omega, n_modes):
         denom = (omega_n[r]**2 - Omega**2) * mu_r
         u_t += np.real(num / denom)
     return u_t
+
 
 # ==========================
 # Modal acceleration method
@@ -153,25 +152,25 @@ def convergence_study(Phi, M, K, F, omega_n, Omega, U_ref, idx, n_modes):
 # Main
 # ==========================
 def main2():
-    # Amortissement
-    C, alpha, beta, zetas = rayleigh_damping(M_ass, K_ass, omega_n)
-    print(f"\nRayleigh damping: α={alpha:.3e}, β={beta:.3e}")
-    for i, z in enumerate(zetas, 1):
-        print(f"Mode {i}: f = {freqs[i-1]:.3f} Hz, ζ = {z:.4f}")
-
+    # Temps (steady-state)
+    dt = 1 / fs
+    t = np.arange(0, t_end, dt)
     # Réponses stationnaires
-    U_ref = FRF_solution(M_ass, C, K_ass, F, Omega)
+    U_ref = FRF_solution(M_ass, K_ass, F, Omega)
+    u_time = np.real(np.exp(1j * Omega * t)[:, None] * U_ref[None, :])
+    u_exc = u_time[:, dof_y]
     x_disp = modal_displacement(Phi, M_ass, F, omega_n, Omega, n_modes)
     x_disp_corrected = np.linalg.inv(K_ass) @ F + x_disp
+    U_modal = modal_displacement(Phi, M_ass, F, omega_n, Omega, n_modes)
+    u_modal = np.real(np.exp(1j * Omega * t)[:, None] * U_modal[None, :])
+    u_modal_exc = u_modal[:, dof_y]
+
     print("Amp FRF:", abs(U_ref[idx])),
     print("Amp disp", abs(x_disp[idx]))
     print("Amp disp-corrected", abs(x_disp_corrected[idx]))
     x_acc = modal_acceleration(Phi, M_ass, K_ass, F, omega_n, Omega, n_modes)
     print("Amp acc:", abs(x_acc[idx]))
 
-    # Temps (steady-state)
-    dt = 1 / fs
-    t = np.arange(0, t_end, dt)
 
     u_exc = np.real(U_ref[idx] * np.cos(Omega * t))
     # Modal displacement & acceleration
