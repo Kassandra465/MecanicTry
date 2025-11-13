@@ -5,8 +5,8 @@ from scipy.fft import fft, fftfreq
 from Vibra_Partie1 import M_ass, K_ass, frequencies, eigvecs, dofList
 
 # PARAMETERS
-F_imp = 7000.0
-T_imp = 0.01
+F_imp = 7000.0  #N
+T_imp = 0.01    #s
 node_brown_index = 2
 dof_y_brown = int(dofList[node_brown_index][1])
 idx_brown = dof_y_brown - 1
@@ -14,16 +14,14 @@ n_modes = 6          # Nombre de modes considérés
 
 # FRÉQUENCES ET MODES PROPRES
 freqs = np.array(frequencies)
-omega_n = 2 * np.pi * freqs
+Omega = 2 * np.pi * F_imp   # rad/s
+omega_n = 2 * np.pi * freqs # rad/s for modal formulas
 Phi = np.array(eigvecs)
 n_modes = min(Phi.shape[1], n_modes)
 
-# NEWMARK PARAMETERS
-gamma_nm = 0.5
-beta_nm = 0.25
-
-dt = 5e-4   #default
-t_end = 1.0              # s, durée totale de simulation
+fs = 200              # [Hz] Fréquence d’échantillonnage
+t_end = 5.0           # [s] Durée d’observation
+dt = 1 / fs
 t = np.arange(0.0, t_end + dt/2, dt)
 nt = len(t)
 
@@ -33,8 +31,6 @@ ndof = M_ass.shape[0]
 # Rayleigh damping
 # ==========================
 zeta_target = 0.01  # 1%
-w1 = omega_n[0]
-w2 = omega_n[1]
 
 def rayleigh_damping(M, K, omega, zeta=zeta_target):
     w1, w2 = omega[0], omega[1]
@@ -92,10 +88,10 @@ def Newmark(M, C, K, p, h, gamma=0.5, beta=0.25):
 # FFT FUNCTION
 # =====================================================
 
-def compute_fft(y, dt):
+def compute_fft(signal, dt):
     from scipy.fft import fft, fftfreq
-    N = len(y)
-    Y = fft(y)
+    N = len(signal)
+    Y = fft(signal)
     f = fftfreq(N, dt)[:N//2]
     Y_mag = 2.0 / N * np.abs(Y[:N//2])
     return f, Y_mag
@@ -106,31 +102,24 @@ def compute_fft(y, dt):
 
 def main3():
     # Damping
-    C_ass, alphaR, betaR, zetas = rayleigh_damping(M_ass, K_ass, omega_n, zeta=0.01)
+    C, alphaR, betaR, zetas = rayleigh_damping(M_ass, K_ass, omega_n, zeta=0.01)
     print(f"\nRayleigh damping: α={alphaR:.3e}, β={betaR:.3e}")
     for i, z in enumerate(zetas, start=1):
         print(f"Mode {i}: f = {freqs[i-1]:.3f} Hz, ζ = {z:.4f}")
 
-    # Time definition
-    h = 5e-4
-    t_end = 1.0
-    time = np.arange(0, t_end + h / 2, h)
-    n_steps = len(time)
-    n_dof = M_ass.shape[0]
-
-    # Force
-    p = build_force_time(F_imp, T_imp, idx_brown, n_dof, n_steps, time)
+   # Force
+    p = build_force_time(F_imp, T_imp, idx_brown, ndof, nt, t)
 
     # Newmark integration
-    q, q_dot, q_ddot = Newmark(M_ass, C_ass, K_ass, p, h, gamma=0.5, beta=0.25)
+    q, q_dot, q_ddot = Newmark(M_ass, C, K_ass, p, dt, gamma=0.5, beta=0.25)
     q_exc = q[:, idx_brown]
 
     # FFT of response
-    f_exc, fft_exc = compute_fft(q_exc, h)
+    f_exc, fft_exc = compute_fft(q_exc, dt)
 
     # Plots
     plt.figure(figsize=(10,5))
-    plt.plot(time, q_exc, lw=1.8)
+    plt.plot(t, q_exc, lw=1.8)
     plt.xlabel('Time [s]')
     plt.ylabel('Displacement [m]')
     plt.title('Transient response at excitation node (Impact with damping)')
@@ -147,7 +136,7 @@ def main3():
     # Summary
     print("\n----- SUMMARY -----")
     print(f"Impact: F = {F_imp:.1f} N, duration = {T_imp*1000:.1f} ms")
-    print(f"Time step: {h:.1e} s, total time: {t_end:.2f} s")
+    print(f"Time step: {dt:.1e} s, total time: {t_end:.2f} s")
     print(f"Rayleigh coefficients: α = {alphaR:.3e}, β = {betaR:.3e}")
 
 
