@@ -5,14 +5,12 @@ from scipy.signal import welch
 from numpy.linalg import inv
 from scipy.signal.windows import cosine
 
-from Vibra_Partie1 import M_ass, K_ass, frequencies, eigvecs, dofList
+from Vibra_Partie1 import M_ass, K_ass, frequencies, eigvecs, dofList, dof_map
 
 # PARAMÈTRES
 A_force = 500.0       # [N] Amplitude de la force
 f_exc = 2.4           # [Hz] Fréquence d’excitation
-freqs = np.array(frequencies)
-Omega = 2 * np.pi * f_exc   # rad/s
-omega_n = 2 * np.pi * freqs # rad/s for modal formulas
+Omega = 2 * np.pi * f_exc
 fs = 200              # [Hz] Fréquence d’échantillonnage
 t_end = 5.0           # [s] Durée d’observation
 dt = 1 / fs
@@ -20,17 +18,20 @@ t = np.arange(0, t_end, dt)
 
 n_modes = 6          # Nombre de modes considérés
 
+#FRÉQUENCES ET MODES PROPRES
+freqs = np.array(frequencies)
+omega_n = 2 * np.pi * freqs
+Phi = np.array(eigvecs)
+n_modes = min(Phi.shape[1], n_modes)
+
 # FORCE D’EXCITATION
 node_green = 6
 dof_y = dofList[node_green][1]     # DOF en direction Y
-idx = int(dof_y -1)                   # passage en index 0-based
+idx = dof_map[dof_y]
 
 F = np.zeros(M_ass.shape[0])
 F[idx] = A_force
 
-#MODES PROPRES
-Phi = np.array(eigvecs)
-n_modes = min(Phi.shape[1], n_modes)
 
 # ==========================
 # Exact stationary response (FRF method)
@@ -84,21 +85,25 @@ def FFT_signal(y, dt):
 # ==========================
 # PSD and RMS
 # ==========================
+#PSD = 2 * (np.abs(Y[pos_idx]) ** 2) / T  # (m/s²)²/Hz
+
 def compute_PSD_RMS(signal, fs):
     N = len(signal)
-    T = N / fs  # total duration
-    Y = np.fft.fft(signal)
-    freqs = np.fft.fftfreq(N, d=1 / fs)
+    dt = 1.0 / fs
+    Y = fft(signal)
+    freqs = fftfreq(N, d=dt)
 
-    # Keep positive frequencies only
+    #Garde les fréquences positives
     pos_idx = freqs >= 0
     f_pos = freqs[pos_idx]
-    PSD = 2 * (np.abs(Y[pos_idx]) ** 2) / T  # (m/s²)²/Hz
 
-    # Compute RMS
+    #PSD
+    PSD = (2.0 / (N * fs)) * (np.abs(Y[pos_idx]) ** 2)
+
+    #RMS
     df = f_pos[1] - f_pos[0]
-    integrale = np.sum(PSD) * df
-    rms = np.sqrt(integrale)
+    mean_square = np.sum(PSD) * df
+    rms = np.sqrt(mean_square) * (Omega ** 2)
 
     return f_pos, PSD, rms
 
@@ -160,15 +165,13 @@ def main2():
     U_acc = modal_acceleration(Phi, M_ass, K_ass, F, omega_n, Omega, n_modes)
     amp_acc = U_acc[idx]
 
-
     # Affichage des amplitudes
     print(f"Index DOF (dof_y): {dof_y}")
     print(f"Amp FRF (exacte): {abs(amp_ref):.5e} m")
-    print(f"Amp Disp (corrigée): {abs(amp_disp):.5e} m")
-    print(f"Amp Acc (corrigée): {abs(amp_acc):.5e} m")
+    print(f"Amp Disp: {abs(amp_disp):.5e} m")
+    print(f"Amp Acc: {abs(amp_acc):.5e} m")
 
     # Génération des séries temporelles (pour les plots)
-
     u_exc = np.real(amp_ref * np.cos(Omega * t))
     u_disp = np.real(amp_disp * np.cos(Omega * t))
     u_acc = np.real(amp_acc * np.cos(Omega * t))
@@ -176,8 +179,15 @@ def main2():
     # FFT
     f_ref, fft_ref = FFT_signal(u_exc, dt)
 
-    #PSD
-    f_psd, PSD, RMS = compute_PSD_RMS(u_acc,fs)
+    # PSD
+    f_psd, PSD, RMS = compute_PSD_RMS(u_acc, fs)
+
+    # RMS théorique = A_acc / sqrt(2)
+    acc_amp_theorique = (Omega ** 2) * abs(amp_acc)
+    rms_theorique = acc_amp_theorique / np.sqrt(2)
+
+    print(f"RMS calculé (via PSD)  : {RMS:.4e} m/s²")
+    print(f"RMS théorique (approx) : {rms_theorique:.4e} m/s²")
     print("RMS", RMS)
 
     #convergence
@@ -223,26 +233,6 @@ def main2():
     plt.ylabel('Displacement [m]')
     plt.legend(); plt.grid(); plt.title('Steady-state response'); plt.show()
 
-    # plot FFT
-    plt.figure(figsize=(8, 5))
-    plt.stem([f_exc], [np.max(fft_ref)], basefmt=" ")
-    plt.xlabel('Frequency [Hz]')
-    plt.ylabel('Amplitude')
-    plt.title('FFT at excitation node (single-frequency excitation)')
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
-
-    # plot PSD
-    plt.figure(figsize=(8, 5))
-    plt.stem(f_psd, PSD, basefmt=" ")
-    plt.xlabel('Frequency [Hz]')
-    plt.ylabel('PSD [(m/s²)²/Hz]')
-    plt.title('PSD of acceleration (single-frequency harmonic response)')
-    plt.grid(True)
-    plt.tight_layout()
-    plt.show()
-
     #Plot convergence
     modes = np.arange(1, n_modes + 1)
     plt.figure(figsize=(8,5))
@@ -271,6 +261,25 @@ def main2():
     plt.tight_layout()
     plt.show()
 
+    # plot FFT
+    plt.figure(figsize=(8, 5))
+    plt.stem([f_exc], [np.max(fft_ref)], basefmt=" ")
+    plt.xlabel('Frequency [Hz]')
+    plt.ylabel('Amplitude')
+    plt.title('FFT at excitation node (single-frequency excitation)')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+    # plot PSD
+    plt.figure(figsize=(8, 5))
+    plt.stem(f_psd, PSD, basefmt=" ")
+    plt.xlabel('Frequency [Hz]')
+    plt.ylabel('PSD [(m/s²)²/Hz]')
+    plt.title('PSD of acceleration (single-frequency harmonic response)')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
 
 
     #Resulats
@@ -288,51 +297,3 @@ def main2():
 
 if __name__ == "__main__":
     main2()
-
-
-#TEST
-
-    U_stat = np.linalg.solve(K_ass, F)
-    print(f"Static deflection at excitation DOF: {U_stat[idx]:.3e} m")
-    F_val = A_force  # 500 N
-    u_expected = 1e-3  # ordre mm -> m (0.001 m)
-    K_expected = F_val / u_expected
-    print("K_expected (approx) [N/m] for 1 mm def:", K_expected)
-    # statistiques sur K_ass
-    K_diag = np.diag(K_ass)
-    print("K_ass diag min/max/mean:", K_diag.min(), K_diag.max(), K_diag.mean())
-    # 1) raideur effective globale (déjà calculée via u_stat)
-    K_eff = A_force / (4.676e-6)  # ou compute from u_stat variable
-    print("Estimated K_eff from u_stat:", K_eff)
-
-    # 2) Statistics détaillées
-    K_diag = np.diag(K_ass)
-    inds_sorted = np.argsort(K_diag)
-    print("K diag stats (min, 1pct, med, mean, 99pct, max):")
-    print(K_diag[inds_sorted][0], K_diag[inds_sorted][int(0.01 * len(K_diag))],
-          np.median(K_diag), K_diag.mean(),
-          K_diag[inds_sorted][int(0.99 * len(K_diag))], K_diag[inds_sorted][-1])
-
-    # 3) Top 10 strongest DOFs (indices + values)
-    top10 = inds_sorted[-10:][::-1]
-    print("Top 10 DOF indices (largest K_diag) and values:")
-    for i in top10:
-        print(i, K_diag[i])
-
-    # 4) Is the excitation DOF stiff?
-    print("Excitation DOF idx:", idx, " K_diag[idx] =", K_diag[idx])
-
-    # 5) If you want, look at neighbor DOFs (depends on mapping)
-    # For example show DOF->dofList mapping around the node index (heuristic)
-    for node_i in range(max(0, node_green - 3), node_green + 3):
-        print(node_i, dofList[node_i])
-
-    # 6) Frequencies quick check (if large -> K/M scaling issue)
-    print("First natural frequencies (Hz):", frequencies[:6])
-    # choose a soft DOF (small K_diag)
-    soft_idx = np.argmin(K_diag)  # ou utilisez la médiane
-    F_test = np.zeros_like(F);
-    F_test[soft_idx] = A_force
-    u_test = np.linalg.inv(K_ass) @ F_test
-    print("Static at soft_idx:", soft_idx, u_test[soft_idx], " (mm):", u_test[soft_idx] * 1000)
-
