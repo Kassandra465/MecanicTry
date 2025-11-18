@@ -246,11 +246,18 @@ def assemble_global_matrices(K_s, M_s, dofList):
     fixed_nodes = [5, 10, 16, 21]  # encastrements
     fixed_dofs = [d for nd in fixed_nodes for d in dofList[nd]]
 
+    #CRÉATION DE LA DOF_MAP pour la partie 2
+    n_total_dofs = K_global.shape[0]
+    dof_map = np.full(n_total_dofs, -1, dtype=int)
+    all_dofs = np.arange(n_total_dofs)
+    free_dofs = np.delete(all_dofs, fixed_dofs)
+    dof_map[free_dofs] = np.arange(len(free_dofs))
+
     # Suppression des lignes et colonnes correspondantes
     K_ass = np.delete(np.delete(K_global, fixed_dofs, axis=0), fixed_dofs, axis=1)
     M_ass = np.delete(np.delete(M_global, fixed_dofs, axis=0), fixed_dofs, axis=1)
 
-    return M_ass, K_ass
+    return M_ass, K_ass, dof_map
 
 # ==========================
 # Extraction fréquences propres
@@ -295,7 +302,7 @@ def convergence_study(main_beams, main_nodes, E, G, rho):
         new_nodes_array, new_beams_array, new_section_type = subdivide_mesh(main_nodes, main_beams, i, elem_section_type)
         dofList = create_dof_list(len(new_nodes_array))
         M_global, K_global = assemble_matrices(new_nodes_array, new_beams_array, new_section_type, E, G, rho)
-        M_ass, K_ass = assemble_global_matrices(M_global, K_global, dofList)
+        M_ass, K_ass, dof_map = assemble_global_matrices(M_global, K_global, dofList)
 
         # Extraction
         frequencies, _ = extract_modes(K_ass, M_ass)
@@ -416,7 +423,7 @@ def main():
 
     # Assemblage global
     M_global, K_global = assemble_matrices(new_nodes, new_beams, section_type, E, G, rho)
-    M_ass, K_ass = assemble_global_matrices(M_global, K_global, dofList)
+    M_ass, K_ass, dof_map = assemble_global_matrices(M_global, K_global, dofList)
 
     # Extraction modale
     frequencies, eigvecs = extract_modes(K_ass, M_ass, n_modes=6)
@@ -462,7 +469,7 @@ new_nodes, new_beams, section_type = subdivide_mesh(main_nodes, main_beams, div,
 dofList = create_dof_list(len(new_nodes))
 # Assemblage global
 M_global, K_global = assemble_matrices(new_nodes, new_beams, section_type, E, G, rho)
-M_ass, K_ass = assemble_global_matrices(M_global, K_global, dofList)
+M_ass, K_ass, dof_map = assemble_global_matrices(M_global, K_global, dofList)
 
 # Extraction modale
 frequencies, eigvecs = extract_modes(K_ass, M_ass, n_modes=6)
