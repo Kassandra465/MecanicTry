@@ -161,3 +161,5 @@ def main3():
 
 if __name__ == "__main__":
     main3()
+
+C, alpha, beta1, zetas = rayleigh_damping(M_ass, K_ass, omega_n, zeta=0.01)
