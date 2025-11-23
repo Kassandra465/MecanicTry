@@ -182,13 +182,18 @@ def main2():
     # PSD
     f_psd, PSD, RMS = compute_PSD_RMS(u_acc, fs)
 
+    idx_max = np.argmax(PSD)
+    val_max = PSD[idx_max]
+    freq_max = f_psd[idx_max]
+    print(f"Fréquence PSD: {freq_max:.4f} Hz")
+    print(f"Amplitude PSD: {val_max:.4e} (m/s²)²/Hz")
+
     # RMS théorique = A_acc / sqrt(2)
     acc_amp_theorique = (Omega ** 2) * abs(amp_acc)
     rms_theorique = acc_amp_theorique / np.sqrt(2)
 
     print(f"RMS calculé (via PSD)  : {RMS:.4e} m/s²")
     print(f"RMS théorique (approx) : {rms_theorique:.4e} m/s²")
-    print("RMS", RMS)
 
     #convergence
     amp_ref, amp_disp, amp_acc, err_disp, err_acc = convergence_study(Phi, M_ass, K_ass, F, omega_n, Omega, U_ref, idx, n_modes)
@@ -273,7 +278,7 @@ def main2():
 
     # plot PSD
     plt.figure(figsize=(8, 5))
-    plt.stem(f_psd, PSD, basefmt=" ")
+    plt.plot(f_psd, PSD, 'b-')
     plt.xlabel('Frequency [Hz]')
     plt.ylabel('PSD [(m/s²)²/Hz]')
     plt.title('PSD of acceleration (single-frequency harmonic response)')
