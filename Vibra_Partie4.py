@@ -49,6 +49,17 @@ def build_force_matrix(F_imp, T_imp, node_exc, n_dof, t_vec):
 
     return F_time
 
+
+def rayleigh_damping(M, K, omega, zeta):
+    w1 = omega[0]
+    w2 = omega[1]
+    mat = 0.5 * np.array([[1 / w1, w1], [1 / w2, w2]])
+    coeffs = np.linalg.solve(mat, [zeta, zeta])
+    alpha = coeffs[0]
+    beta = coeffs[1]
+    C = alpha * M + beta * K
+    return C, alpha, beta
+
 # ---------------------------
 # Partition Matrix
 # ---------------------------
@@ -93,17 +104,24 @@ def extract_modes(K, M, n_modes):
 def guyan_irons(M, K, retained_dofs):
     M_RR, M_RC, M_CR, M_CC, R, C = partition_matrix(M, retained_dofs)
     K_RR, K_RC, K_CR, K_CC, _, _ = partition_matrix(K, retained_dofs)
-    # compute R_part = -K_CC^{-1} K_CR
-    R1 = -np.linalg.inv(K_CC) @ K_CR   # solves K_CC X = K_CR
-    # Build R (stacked [I; R_part])
-    I = np.eye(len(R))
-    R2 = np.vstack([I, R1])
-    # Reduced matrices: M_r = R^T * M * R, K_r = R^T * K * R
-    M_part = np.block([[M_RR, M_RC], [M_CR, M_CC]])
-    K_part = np.block([[K_RR, K_RC], [K_CR, K_CC]])
-    M_reduced = R2.T @ M_part @ R2
-    K_reduced = R2.T @ K_part @ R2
-    return M_reduced, K_reduced, R2, R, C
+
+    T_s = -np.linalg.inv(K_CC) @ K_CR
+
+    n_total = M.shape[0]
+    n_ret = len(R)
+    R_mat = np.zeros((n_total, n_ret))
+
+    # R_mat[indice_global, colonne_reduite] = 1
+    for k, idx_global in enumerate(R):
+        R_mat[idx_global, k] = 1.0
+
+    for i, idx_global in enumerate(C):
+        R_mat[idx_global, :] = T_s[i, :]
+
+    M_reduced = R_mat.T @ M @ R_mat
+    K_reduced = R_mat.T @ K @ R_mat
+
+    return M_reduced, K_reduced, R_mat, R, C
 
 # ---------------------------
 # Craig-Bampton reduction
@@ -203,8 +221,6 @@ def find_k(M_full, K_full, retained_dofs, frequencies, k_max=15) :
     return None, last_freqs, last_errs
 
 
-
-
 #==========
 # Main
 #===========
@@ -232,6 +248,9 @@ def main4():
     print(f"Erreur Rel. (%)  : {np.round(err_guyan, 4)}")
     print(f"Temps réduction  : {t_guyan_red:.4f} s")
 
+    omega = 2 * np.pi * freq_full
+    C, alpha, beta = rayleigh_damping(M_ass, K_ass, omega, zeta=0.01)
+
     # Simulation Guyan
     print("Simu Guyan...")
     # Projection Force & Amortissement
@@ -243,8 +262,8 @@ def main4():
     t_guyan_sim = time.perf_counter() - t0
 
     # Reconstruction physique
-    u_guyan_phys = (R_guyan @ q_guyan_red.T).T
-    u_guyan = u_guyan_phys[:, dof_exc_red]
+    u_guyan_full = (R_guyan @ q_guyan_red.T).T  # (n_steps x n_full)
+    u_guyan_at_exc = u_guyan_full[:, dof_exc_global]
 
     # Craig-Bampton
     print("\n--- Craig-Bampton ---")
@@ -267,8 +286,8 @@ def main4():
     q_cb_red, _, _ = Newmark(M_cb, C_cb, K_cb, P_cb, dt)
     t_cb_sim = time.perf_counter() - t0
 
-    u_cb_phys = (R_cb @ q_cb_red.T).T
-    u_cb = u_cb_phys[:, dof_exc_red]
+    u_cb_full = (R_cb @ q_cb_red.T).T
+    u_cb_at_exc = u_cb_full[:, dof_exc_global]
 
     # Full Model (Référence)
     t0 = time.perf_counter()
@@ -276,14 +295,14 @@ def main4():
     q_full, _, _ = Newmark(M_ass, C, K_ass, P_full, dt)
     t_full_sim = time.perf_counter() - t0
 
-    u_full = q_full[:, dof_exc_red]
+    u_full_at_exc = q_full[:, dof_exc_global]
 
     # Affichage et Comparaisons
 
     # Conversion en mm
-    u_full_mm = u_full * 1000
-    u_guyan_mm = u_guyan * 1000
-    u_cb_mm = u_cb * 1000
+    u_full_mm = u_full_at_exc * 1000
+    u_guyan_mm = u_guyan_at_exc * 1000
+    u_cb_mm = u_cb_at_exc * 1000
 
     print("\n----- BILAN PERFORMANCE -----")
     print(f"{'Méthode':<15} | {'Taille (DOFs)':<12} | {'Temps Simu (s)':<15} | {'Speedup':<10}")
@@ -295,7 +314,7 @@ def main4():
     # Plots
     # Guyan-Irons model
     plt.figure(figsize=(10, 4))
-    plt.plot(t, u_guyan_mm, 'b--', lw=1.5)
+    plt.plot(t, u_guyan_mm, 'b-', lw=1.5)
     plt.title(f"Guyan-Irons Reduced Model Response at Node {node_exc} (Y)")
     plt.xlabel("Time [s]")
     plt.ylabel("Displacement [mm]")
@@ -315,15 +334,14 @@ def main4():
 
     #  Global Plot (log scale)
     plt.figure(figsize=(10, 6))
-    plt.plot(t, np.abs(u_full_mm), 'k-', lw=2, alpha=0.7, label='Full (Ref)')
-    plt.plot(t, np.abs(u_guyan_mm), 'b--', lw=1.5, label='Guyan')
-    plt.plot(t, np.abs(u_cb_mm), 'r:', lw=2, label=f'CB (k={k_opt})')
-    plt.yscale("log")
-    plt.title(f"Transient Response (Log scale) at Node {node_exc} (Y) - Impact {F_imp}N")
+    plt.plot(t, u_full_mm, 'k-', lw=2, alpha=0.7, label='Full (Ref)')
+    plt.plot(t, u_guyan_mm, 'b--', lw=1.5, label='Guyan')
+    plt.plot(t, u_cb_mm, 'r:', lw=2, label=f'CB (k={k_opt})')
+    plt.title(f"Transient Response at Node {node_exc} (Y) - Impact {F_imp}N")
     plt.xlabel("Time [s]")
-    plt.ylabel("Displacement [mm] (log scale)")
+    plt.ylabel("Displacement [mm]")
     plt.legend()
-    plt.grid(True, which="both", linestyle="--")
+    plt.grid(True)
     plt.tight_layout()
     plt.show()
 
